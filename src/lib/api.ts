@@ -151,6 +151,13 @@ export async function copyText(value: string): Promise<boolean> {
   }
 }
 
+export async function subscribeToWidgetShown(
+  handler: () => void,
+): Promise<() => void> {
+  if (!isTauri) return () => undefined;
+  return listen("widget-shown", handler);
+}
+
 export async function subscribeToUpdates(
   handler: () => void,
 ): Promise<() => void> {

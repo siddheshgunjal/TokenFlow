@@ -5,8 +5,10 @@ import { Logo } from "../components/Logo";
 import {
   getDashboard,
   quitApp,
+  refreshDeepSeekBalance,
   showMainWindow,
   subscribeToUpdates,
+  subscribeToWidgetShown,
   toggleWidget,
 } from "../lib/api";
 import {
@@ -22,6 +24,7 @@ import type { DashboardSummary } from "../lib/types";
 export function Widget() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -46,6 +49,28 @@ export function Widget() {
     }, 30_000);
 
     return () => window.clearInterval(interval);
+  }, [refresh]);
+
+  // Hidden webviews throttle timers, so refresh as soon as the tray reveals
+  // the widget. `widget-shown` is emitted by the Rust `toggle_widget` path that
+  // every platform uses when opening the panel.
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    subscribeToWidgetShown(() => {
+      void refresh();
+    })
+      .then((cleanup) => {
+        if (disposed) cleanup();
+        else unsubscribe = cleanup;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
   }, [refresh]);
 
   useEffect(() => {
@@ -78,6 +103,16 @@ export function Widget() {
       await toggleWidget(false);
     } catch (err) {
       setError(String(err));
+    }
+  }
+
+  async function handleManualRefresh() {
+    setRefreshing(true);
+    try {
+      await Promise.allSettled([refreshDeepSeekBalance(), refresh()]);
+      await refresh();
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -151,6 +186,19 @@ export function Widget() {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void handleManualRefresh()}
+              disabled={refreshing}
+              aria-label="Refresh widget data"
+              title="Refresh usage and balance"
+              className="grid h-6 w-6 place-items-center rounded-md text-slate-500 transition-colors hover:bg-teal-400/[0.08] hover:text-teal-200 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon
+                name="refresh"
+                className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+              />
+            </button>
             <button
               type="button"
               onClick={() => {
