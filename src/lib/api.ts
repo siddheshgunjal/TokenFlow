@@ -2,7 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
 
-import { mockDashboard, mockDeepSeekStatus, mockSettingsView } from "./mock";
+import {
+  mockBalanceHistory,
+  mockDashboard,
+  mockDeepSeekStatus,
+  mockSettingsView,
+} from "./mock";
 import type {
   BalanceSnapshot,
   ClearDataResult,
@@ -34,9 +39,7 @@ export async function getSettings(): Promise<SettingsView> {
   return invoke<SettingsView>("get_settings");
 }
 
-export async function saveSettings(
-  settings: Settings,
-): Promise<SettingsView> {
+export async function saveSettings(settings: Settings): Promise<SettingsView> {
   if (!isTauri) {
     await delay(220);
     return {
@@ -77,6 +80,26 @@ export async function refreshDeepSeekBalance(): Promise<BalanceSnapshot[]> {
     return mockDeepSeekStatus.balances;
   }
   return invoke<BalanceSnapshot[]>("refresh_deepseek_balance");
+}
+
+export async function getBalanceHistory({
+  currency,
+  since,
+  until,
+}: {
+  currency: string;
+  since: number;
+  until: number;
+}): Promise<BalanceSnapshot[]> {
+  if (!isTauri) {
+    await delay(120);
+    return mockBalanceHistory(since, until, currency);
+  }
+  return invoke<BalanceSnapshot[]>("get_balance_history", {
+    currency,
+    since,
+    until,
+  });
 }
 
 export async function clearUsageData(): Promise<ClearDataResult> {

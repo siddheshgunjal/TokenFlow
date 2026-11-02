@@ -194,6 +194,19 @@ impl Db {
         Ok(status.unwrap_or_default())
     }
 
+    /// Returns balance samples for one currency in the interval
+    /// `[since, until)`, oldest first. The timestamps are Unix seconds in UTC;
+    /// callers project them to local calendar ranges.
+    pub fn balance_history(
+        &self,
+        currency: &str,
+        since: i64,
+        until: i64,
+    ) -> Result<Vec<BalanceSnapshot>, AppError> {
+        let conn = self.lock();
+        Ok(balance_history(&conn, currency, since, until)?)
+    }
+
     pub fn latest_balances(&self) -> Result<Vec<BalanceSnapshot>, AppError> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
@@ -425,6 +438,33 @@ fn recent_logs(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<OllamaLog>
     Ok(out)
 }
 
+fn balance_history(
+    conn: &Connection,
+    currency: &str,
+    since: i64,
+    until: i64,
+) -> rusqlite::Result<Vec<BalanceSnapshot>> {
+    let (since, until) = if since <= until {
+        (since, until)
+    } else {
+        (until, since)
+    };
+
+    let mut stmt = conn.prepare(
+        "SELECT is_available, balance, currency, granted_balance, topped_up_balance, created_at
+         FROM deepseek_balances
+         WHERE currency = ?1 AND created_at >= ?2 AND created_at < ?3
+         ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = stmt.query_map(params![currency, since, until], map_balance_row)?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 fn latest_balance(conn: &Connection) -> rusqlite::Result<Option<BalanceSnapshot>> {
     conn.query_row(
         "SELECT is_available, balance, currency, granted_balance, topped_up_balance, created_at
@@ -497,8 +537,8 @@ fn local_midnight(date: NaiveDate) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{cache_hit_rate, run_migrations};
-    use rusqlite::Connection;
+    use super::{balance_history, cache_hit_rate, run_migrations};
+    use rusqlite::{params, Connection};
 
     #[test]
     fn cache_rate_is_zero_safe_and_clamped() {
@@ -506,6 +546,32 @@ mod tests {
         assert_eq!(cache_hit_rate(120, 100), 1.0);
         assert_eq!(cache_hit_rate(-10, 100), 0.0);
         assert_eq!(cache_hit_rate(0, 0), 0.0);
+    }
+
+    #[test]
+    fn balance_history_filters_by_currency_and_time() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        run_migrations(&conn).expect("migrations");
+
+        for (currency, balance, at) in [
+            ("USD", "10.00", 100_i64),
+            ("USD", "9.00", 200),
+            ("CNY", "70.00", 250),
+            ("USD", "8.00", 300),
+        ] {
+            conn.execute(
+                "INSERT INTO deepseek_balances
+                    (is_available, balance, currency, granted_balance, topped_up_balance, created_at)
+                 VALUES (1, ?1, ?2, NULL, NULL, ?3)",
+                params![balance, currency, at],
+            )
+            .expect("insert balance");
+        }
+
+        let rows = balance_history(&conn, "USD", 100, 300).expect("balance history");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].total_balance, "10.00");
+        assert_eq!(rows[1].total_balance, "9.00");
     }
 
     #[test]

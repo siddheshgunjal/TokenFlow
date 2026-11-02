@@ -3,14 +3,17 @@ import { useState } from "react";
 import { refreshDeepSeekBalance } from "../lib/api";
 import { formatMoney, formatRelative } from "../lib/format";
 import type { BalanceSnapshot } from "../lib/types";
+import { BalanceChart } from "./BalanceChart";
 import { Icon } from "./Icons";
 
 export function DeepSeekCard({
   balance,
+  monthOffset,
   onRefreshed,
   onOpenSettings,
 }: {
   balance: BalanceSnapshot | null;
+  monthOffset: number;
   onRefreshed: () => void;
   onOpenSettings: () => void;
 }) {
@@ -34,18 +37,18 @@ export function DeepSeekCard({
   const needsKey = error?.toLowerCase().includes("api key");
 
   return (
-    <section className="card flex h-full flex-col p-5">
+    <section className="card flex h-full min-w-0 flex-col p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/20">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/20">
             <Icon name="wallet" />
           </span>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-200">DeepSeek</h2>
             <p className="text-[11px] text-slate-500">Available balance</p>
           </div>
         </div>
-        <span className="chip">
+        <span className="chip shrink-0">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
               balance?.isAvailable
@@ -60,10 +63,10 @@ export function DeepSeekCard({
       {balance ? (
         <>
           <div className="mt-5">
-            <p className="text-[30px] font-semibold leading-none tracking-tight text-white tabular-nums">
+            <p className="break-words text-[30px] font-semibold leading-none tracking-tight text-white tabular-nums">
               {formatMoney(balance.totalBalance, balance.currency)}
             </p>
-            <p className="mt-2 text-[11px] text-slate-500">
+            <p className="mt-2 text-[11px] leading-4 text-slate-500">
               Total available · {balance.currency} · synced{" "}
               {formatRelative(balance.createdAt)}
             </p>
@@ -87,6 +90,14 @@ export function DeepSeekCard({
               </span>
             </div>
           </div>
+
+          <div className="mt-5 flex min-h-0 flex-1 flex-col">
+            <BalanceChart
+              currency={balance.currency}
+              monthOffset={monthOffset}
+              refreshKey={balance.createdAt}
+            />
+          </div>
         </>
       ) : (
         <div className="mt-6 rounded-xl border border-dashed border-white/10 bg-white/[0.015] p-4">
@@ -95,19 +106,19 @@ export function DeepSeekCard({
             <p className="text-sm font-medium">Connect DeepSeek</p>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Add a DeepSeek API key to track your account balance. The key is
-            only used against api.deepseek.com.
+            Add a DeepSeek API key to track your account balance and chart its
+            trend over time. The key is only used against api.deepseek.com.
           </p>
         </div>
       )}
 
       {error ? (
-        <p className="mt-3 text-[11px] leading-relaxed text-rose-300">
+        <p className="mt-3 break-words text-[11px] leading-relaxed text-rose-300">
           {needsKey ? "DeepSeek needs an API key. Add one in Settings." : error}
         </p>
       ) : null}
 
-      <div className="mt-auto flex items-center gap-2 pt-4">
+      <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
         <button
           type="button"
           onClick={handleRefresh}

@@ -1,4 +1,5 @@
 import type {
+  BalanceSnapshot,
   DailyUsage,
   DashboardSummary,
   DeepSeekStatus,
@@ -167,6 +168,45 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
       error: null,
     },
   };
+}
+
+export function mockBalanceHistory(
+  since: number,
+  until: number,
+  currency = "USD",
+): BalanceSnapshot[] {
+  const step = 3_600;
+  const first = Math.ceil(since / step) * step;
+  // The requested `until` is the end of the selected period, which can be in
+  // the future. Only synthesize samples that could exist today.
+  const last = Math.min(until, Math.floor(Date.now() / 1000));
+  if (last <= first) return [];
+
+  const count = Math.floor((last - first) / step);
+  const snapshots: BalanceSnapshot[] = [];
+  // Walk backwards from the latest snapshot so the chart ends at the balance
+  // shown on the card.
+  let balance = 24.86;
+
+  for (let index = count; index >= 0; index -= 1) {
+    const at = first + index * step;
+    const seed = Math.floor(at / step);
+    const spend = noise(seed) * 0.045;
+    const topUp = noise(seed + 41) > 0.997 ? 5 + noise(seed + 43) * 5 : 0;
+
+    snapshots.push({
+      isAvailable: true,
+      totalBalance: balance.toFixed(2),
+      currency,
+      grantedBalance: "3.20",
+      toppedUpBalance: Math.max(0, balance - 3.2).toFixed(2),
+      createdAt: at,
+    });
+
+    balance = Math.max(0.5, balance + spend - topUp);
+  }
+
+  return snapshots.reverse();
 }
 
 export const mockSettings: Settings = {

@@ -22,7 +22,7 @@ export function Sidebar({
   proxy: ProxyStatus;
 }) {
   return (
-    <aside className="flex w-[228px] shrink-0 flex-col border-r border-white/[0.06] bg-[#080d16]/70">
+    <aside className="flex w-[208px] shrink-0 flex-col border-r border-white/[0.06] bg-[#080d16]/70">
       <div className="flex items-center gap-2.5 px-5 pb-6 pt-6">
         <Logo className="h-9 w-9" />
         <div className="min-w-0">
@@ -83,9 +83,7 @@ export function Sidebar({
             className="mt-1.5 truncate font-mono text-[10px] text-slate-600"
             title={proxy.error ?? proxy.bindAddress}
           >
-            {proxy.running
-              ? proxy.bindAddress
-              : (proxy.error ?? "Starting…")}
+            {proxy.running ? proxy.bindAddress : (proxy.error ?? "Starting…")}
           </p>
           <div className="mt-3 flex items-center gap-1.5 text-[10px] text-slate-600">
             <Icon name="shield" className="h-3 w-3" />

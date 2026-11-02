@@ -72,6 +72,7 @@ pub fn run() {
             commands::save_settings,
             commands::save_deepseek_api_key,
             commands::get_deepseek_status,
+            commands::get_balance_history,
             commands::refresh_deepseek_balance,
             commands::clear_usage_data,
             commands::get_proxy_status,

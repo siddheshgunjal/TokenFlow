@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { DeepSeekCard } from "../components/DeepSeekCard";
 import { Icon } from "../components/Icons";
@@ -22,6 +24,7 @@ export function Dashboard({
   onOpenSettings: () => void;
   onRefresh: () => void;
 }) {
+  const [monthOffset, setMonthOffset] = useState(0);
   const balance = data.latestBalance;
   const proxyUrl = data.proxy.bindAddress
     ? `http://${data.proxy.bindAddress}`
@@ -38,7 +41,7 @@ export function Dashboard({
             <p className="text-sm font-medium text-rose-200">
               The Ollama proxy is offline
             </p>
-            <p className="mt-0.5 truncate text-xs text-rose-300/70">
+            <p className="mt-0.5 break-words text-xs text-rose-300/70">
               {data.proxy.error ??
                 "TokenFlow could not bind the loopback proxy."}
             </p>
@@ -130,15 +133,23 @@ export function Dashboard({
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
-          <ActivityHeatmap daily={data.daily} streakDays={data.streakDays} />
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="min-w-0 lg:col-span-3">
+          <ActivityHeatmap
+            daily={data.daily}
+            streakDays={data.streakDays}
+            monthOffset={monthOffset}
+            onMonthOffsetChange={setMonthOffset}
+          />
         </div>
-        <DeepSeekCard
-          balance={balance}
-          onRefreshed={onRefresh}
-          onOpenSettings={onOpenSettings}
-        />
+        <div className="min-w-0 lg:col-span-2">
+          <DeepSeekCard
+            balance={balance}
+            monthOffset={monthOffset}
+            onRefreshed={onRefresh}
+            onOpenSettings={onOpenSettings}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">

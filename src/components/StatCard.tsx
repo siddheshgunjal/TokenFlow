@@ -30,20 +30,10 @@ export function StatCard({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay, ease: [0.22, 1, 0.36, 1] }}
-      className="card p-5"
+      className="card min-w-0 p-5"
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="label">{label}</p>
-          <p className="mt-2.5 whitespace-nowrap text-[27px] font-semibold leading-none tracking-tight text-white tabular-nums">
-            {value}
-          </p>
-          {hint ? (
-            <p className="mt-2 break-words text-xs leading-4 text-slate-500">
-              {hint}
-            </p>
-          ) : null}
-        </div>
+        <p className="label min-w-0 break-words">{label}</p>
         <span
           className={classNames(
             "grid h-9 w-9 shrink-0 place-items-center rounded-xl ring-1",
@@ -53,6 +43,17 @@ export function StatCard({
           {icon}
         </span>
       </div>
+      <p className="mt-3 whitespace-nowrap text-[25px] font-semibold leading-none tracking-tight text-white tabular-nums xl:text-[27px]">
+        {value}
+      </p>
+      {hint ? (
+        <p
+          className="mt-2 break-words text-[11px] leading-4 text-slate-500"
+          title={hint}
+        >
+          {hint}
+        </p>
+      ) : null}
     </motion.div>
   );
 }

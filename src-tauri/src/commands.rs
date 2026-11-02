@@ -118,6 +118,20 @@ pub async fn refresh_deepseek_balance(
 }
 
 #[tauri::command]
+pub async fn get_balance_history(
+    state: State<'_, AppState>,
+    currency: String,
+    since: i64,
+    until: i64,
+) -> Result<Vec<BalanceSnapshot>, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.balance_history(&currency, since, until))
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn clear_usage_data(state: State<'_, AppState>) -> Result<ClearDataResult, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || state.db.clear_usage_data())
