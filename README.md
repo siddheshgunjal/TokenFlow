@@ -261,6 +261,9 @@ restart; the Settings screen shows a banner when a restart is needed.
   cache hit rate, DeepSeek total/granted/topped-up balance, and a 14-day
   new-input/output graph. **Open TokenFlow** and **Quit** are always available at
   the bottom.
+- Opening the panel from the tray triggers an immediate data refresh, because
+  hidden webviews throttle their timers. The header also has a manual refresh
+  button that polls DeepSeek and reloads the local usage summary.
 - The panel and dashboard update live from Tauri events.
 
 ### Measurement limitations

@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, PhysicalSize, State};
+use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, State};
 
 use crate::{
     error::AppError,
@@ -187,6 +187,12 @@ pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bo
         position_widget(&window, state.inner());
         window.show().map_err(|err| err.to_string())?;
         position_widget(&window, state.inner());
+
+        // Hidden webviews throttle their timers, so the widget explicitly
+        // refreshes whenever it is revealed from the tray (or on launch).
+        if let Err(err) = app.emit("widget-shown", ()) {
+            tracing::warn!(%err, "could not emit widget-shown");
+        }
     } else {
         window.hide().map_err(|err| err.to_string())?;
     }
