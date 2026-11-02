@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background-color: #070a11;
+  color: #e2e8f0;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body.widget-body {
+  background: transparent;
+  overflow: hidden;
+}
+
+.app-surface {
+  background-image:
+    radial-gradient(
+      1100px 700px at 12% -12%,
+      rgba(45, 212, 191, 0.1),
+      transparent 58%
+    ),
+    radial-gradient(
+      900px 600px at 94% 2%,
+      rgba(139, 92, 246, 0.09),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #080c14 0%, #070a11 55%, #070a11 100%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.28);
+  color: #f8fafc;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #263244 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #263244;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-white/[0.07] bg-panel/80 shadow-card backdrop-blur-sm;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-slate-950 hover:bg-teal-300;
+  }
+
+  .btn-secondary {
+    @apply btn border border-white/10 bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-400 hover:bg-white/[0.05] hover:text-white;
+  }
+
+  .btn-danger {
+    @apply btn border border-rose-500/20 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-white/10 bg-[#080d16] px-3 py-2 text-sm text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-teal-400/60 focus:ring-2 focus:ring-teal-400/10;
+  }
+
+  .label {
+    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-slate-400;
+  }
+
+  .nav-item {
+    @apply relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 transition-colors hover:text-slate-100;
+  }
+}

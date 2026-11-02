@@ -1,0 +1,60 @@
+[package]
+name = "tokenflow"
+version = "0.1.0"
+description = "Local-first desktop analytics for Ollama and DeepSeek usage"
+authors = ["TokenFlow contributors"]
+edition = "2021"
+rust-version = "1.90"
+license = "GPL-3.0-only"
+default-run = "tokenflow"
+
+[lib]
+name = "tokenflow_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Desktop shell
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-shell = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime + embedded HTTP proxy
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "time",
+    "sync",
+] }
+axum = { version = "0.7", features = ["http1", "json", "tokio"] }
+tower-http = { version = "0.5", features = ["cors"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "stream",
+    "http2",
+] }
+
+# Storage + time
+rusqlite = { version = "0.31", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+
+# Linux tray integration. We drive libappindicator directly so we can connect
+# its `activate` signal and set XAyatanaLabel; Tauri's tray wrapper exposes
+# neither on Linux.
+[target.'cfg(target_os = "linux")'.dependencies]
+glib = "0.18"
+gtk = "0.18"
+libappindicator-sys = "0.9"
+
+# Diagnostics
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
