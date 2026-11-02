@@ -177,9 +177,9 @@ configured proxy port.
 
 For OpenAI-compatible responses, TokenFlow also reads
 `usage.prompt_tokens_details.cached_tokens`. The same fields are shown in the
-dashboard, recent-request table, and tray panel. The activity heatmap can switch
-between inference (new input + output), new input, context, output, and cached
-views.
+dashboard, recent-request table, and tray panel. The activity calendar can
+switch between inference (new input + output), new input, context, output, and
+cached views.
 
 ### DeepSeek key precedence
 
@@ -280,7 +280,7 @@ restart; the Settings screen shows a banner when a restart is needed.
 ```text
 TokenFlow/
 ├── src/                         # React frontend
-│   ├── components/              # Heatmap, cards, sidebar, icons
+│   ├── components/              # Activity calendar, cards, sidebar, icons
 │   ├── lib/                     # Typed API bridge, formatting, browser mock
 │   ├── pages/                   # Dashboard + Settings
 │   ├── widget/                  # Tray-anchored metrics panel

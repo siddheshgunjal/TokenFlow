@@ -11,12 +11,6 @@ import {
 import type { DailyUsage } from "../lib/types";
 import { Icon } from "./Icons";
 
-interface HeatCell {
-  date: Date;
-  key: string;
-  usage: DailyUsage | undefined;
-}
-
 type Metric = "total" | "input" | "output" | "cached" | "context";
 
 const METRICS: Array<{
@@ -29,33 +23,35 @@ const METRICS: Array<{
     id: "total",
     label: "All",
     description: "inference tokens (new input + output)",
-    valueLabel: "inference tokens this year",
+    valueLabel: "inference tokens this month",
   },
   {
     id: "input",
     label: "New input",
     description: "new input tokens",
-    valueLabel: "new input tokens this year",
+    valueLabel: "new input tokens this month",
   },
   {
     id: "output",
     label: "Output",
     description: "output tokens",
-    valueLabel: "output tokens this year",
+    valueLabel: "output tokens this month",
   },
   {
     id: "context",
     label: "Context",
     description: "total prompt context",
-    valueLabel: "context tokens this year",
+    valueLabel: "context tokens this month",
   },
   {
     id: "cached",
     label: "Cached",
     description: "cached input tokens",
-    valueLabel: "cached tokens this year",
+    valueLabel: "cached tokens this month",
   },
 ];
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const LEVEL_STYLES: Record<Metric, string[]> = {
   total: [
@@ -95,6 +91,13 @@ const LEVEL_STYLES: Record<Metric, string[]> = {
   ],
 };
 
+interface DayCell {
+  date: Date;
+  key: string;
+  day: number;
+  usage: DailyUsage | undefined;
+}
+
 function valueFor(day: DailyUsage | undefined, metric: Metric): number {
   if (!day) return 0;
   switch (metric) {
@@ -115,6 +118,13 @@ function valueFor(day: DailyUsage | undefined, metric: Metric): number {
   }
 }
 
+function monthsBetween(earlier: Date, later: Date): number {
+  return (
+    (later.getFullYear() - earlier.getFullYear()) * 12 +
+    (later.getMonth() - earlier.getMonth())
+  );
+}
+
 export function ActivityHeatmap({
   daily,
   streakDays,
@@ -123,63 +133,82 @@ export function ActivityHeatmap({
   streakDays: number;
 }) {
   const [metric, setMetric] = useState<Metric>("total");
+  const [monthOffset, setMonthOffset] = useState(0);
+
   const metricInfo = METRICS.find((entry) => entry.id === metric) ?? METRICS[0];
   const usageByDate = new Map(daily.map((entry) => [entry.date, entry]));
-  const maxValue = daily.reduce(
-    (max, entry) => Math.max(max, valueFor(entry, metric)),
-    0,
-  );
-  const totalValue = daily.reduce(
-    (sum, entry) => sum + valueFor(entry, metric),
-    0,
-  );
 
   const today = new Date();
   today.setHours(12, 0, 0, 0);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 364);
+  const todayKey = toDateKey(today);
 
-  const cells: Array<HeatCell | null> = Array.from(
-    { length: start.getDay() },
-    () => null,
+  // The dashboard supplies roughly 365 days of history, so the earliest
+  // navigable month is the one containing `today - 364 days`.
+  const earliest = new Date(today);
+  earliest.setDate(earliest.getDate() - 364);
+  const maxMonthOffset = Math.max(0, monthsBetween(earliest, today));
+
+  const activeOffset = Math.min(monthOffset, maxMonthOffset);
+  const viewMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() - activeOffset,
+    1,
+  );
+  const viewYear = viewMonth.getFullYear();
+  const viewMonthIndex = viewMonth.getMonth();
+  const monthLabel = viewMonth.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+  const isCurrentMonth = activeOffset === 0;
+
+  const daysInMonth = new Date(viewYear, viewMonthIndex + 1, 0).getDate();
+  const leadingBlanks = viewMonth.getDay();
+
+  const monthDays: DayCell[] = Array.from(
+    { length: daysInMonth },
+    (_, index) => {
+      const date = new Date(viewYear, viewMonthIndex, index + 1, 12);
+      const key = toDateKey(date);
+      return { date, key, day: index + 1, usage: usageByDate.get(key) };
+    },
   );
 
-  for (let offset = 0; offset < 365; offset += 1) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + offset);
-    const key = toDateKey(date);
-    cells.push({ date, key, usage: usageByDate.get(key) });
-  }
+  const monthMax = monthDays.reduce(
+    (max, cell) => Math.max(max, valueFor(cell.usage, metric)),
+    0,
+  );
+  const monthTotal = monthDays.reduce(
+    (sum, cell) => sum + valueFor(cell.usage, metric),
+    0,
+  );
+  const activeDays = monthDays.filter(
+    (cell) => valueFor(cell.usage, metric) > 0,
+  ).length;
 
-  while (cells.length % 7 !== 0) {
-    cells.push(null);
-  }
-
-  const weeks = cells.length / 7;
-  const monthLabels: Array<{ week: number; label: string }> = [];
-  let previousMonth = -1;
-
-  for (let week = 0; week < weeks; week += 1) {
-    const first = cells[week * 7];
-    if (!first) continue;
-
-    const month = first.date.getMonth();
-    if ((week === 0 || first.date.getDate() <= 7) && month !== previousMonth) {
-      monthLabels.push({
-        week,
-        label: first.date.toLocaleDateString(undefined, { month: "short" }),
-      });
-      previousMonth = month;
-    }
+  const calendarCells: Array<DayCell | null> = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...monthDays,
+  ];
+  while (calendarCells.length % 7 !== 0) {
+    calendarCells.push(null);
   }
 
   const levelFor = (tokens: number): number => {
-    if (tokens <= 0 || maxValue <= 0) return 0;
-    const ratio = tokens / maxValue;
+    if (tokens <= 0 || monthMax <= 0) return 0;
+    const ratio = tokens / monthMax;
     if (ratio <= 0.2) return 1;
     if (ratio <= 0.45) return 2;
     if (ratio <= 0.7) return 3;
     return 4;
+  };
+
+  const goToPreviousMonth = () => {
+    setMonthOffset((current) => Math.min(maxMonthOffset, current + 1));
+  };
+
+  const goToNextMonth = () => {
+    setMonthOffset((current) => Math.max(0, current - 1));
   };
 
   return (
@@ -196,18 +225,18 @@ export function ActivityHeatmap({
             ) : null}
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Daily {metricInfo.description} across the last 365 days
+            Daily {metricInfo.description}
           </p>
         </div>
         <div className="text-right">
           <p className="text-lg font-semibold text-white tabular-nums">
-            {formatCompact(totalValue)}
+            {formatCompact(monthTotal)}
           </p>
           <p className="text-[11px] text-slate-500">{metricInfo.valueLabel}</p>
         </div>
       </div>
 
-      <div className="mt-3 inline-flex flex-wrap gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5">
+      <div className="mt-3 inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5">
         {METRICS.map((entry) => (
           <button
             key={entry.id}
@@ -224,61 +253,102 @@ export function ActivityHeatmap({
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto pb-1">
-        <div className="flex min-w-[520px] gap-2">
-          <div className="flex shrink-0 flex-col gap-[2px] pt-[20px] text-[9px] leading-[11px] text-slate-600">
-            {["", "Mon", "", "Wed", "", "Fri", ""].map((label, index) => (
-              <span key={index} className="h-[11px] w-7">
-                {label}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={goToPreviousMonth}
+            disabled={activeOffset >= maxMonthOffset}
+            aria-label="Previous month"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          >
+            <Icon name="chevron-right" className="h-3.5 w-3.5 rotate-180" />
+          </button>
+          <p className="min-w-[9.5rem] text-center text-base font-semibold text-slate-200">
+            {monthLabel}
+          </p>
+          <button
+            type="button"
+            onClick={goToNextMonth}
+            disabled={isCurrentMonth}
+            aria-label="Next month"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          >
+            <Icon name="chevron-right" className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {!isCurrentMonth ? (
+          <button
+            type="button"
+            onClick={() => setMonthOffset(0)}
+            className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[10px] font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
+          >
+            Today
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-3 overflow-x-auto pb-1">
+        <div className="min-w-[560px]">
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-slate-600">
+            {WEEKDAYS.map((weekday) => (
+              <span key={weekday} className="py-1">
+                {weekday}
               </span>
             ))}
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div
-              className="mb-1 grid gap-[2px] text-[10px] leading-4 text-slate-500"
-              style={{
-                gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
-              }}
-            >
-              {monthLabels.map((label) => (
-                <span
-                  key={`${label.week}-${label.label}`}
-                  style={{ gridColumnStart: label.week + 1 }}
-                  className="whitespace-nowrap"
-                >
-                  {label.label}
-                </span>
-              ))}
-            </div>
+          <div
+            className="mt-1 grid grid-cols-7 gap-1"
+            role="img"
+            aria-label={`Calendar heatmap of daily ${metricInfo.description} for ${monthLabel}`}
+          >
+            {calendarCells.map((cell, index) => {
+              if (!cell) {
+                return (
+                  <div
+                    key={`blank-${index}`}
+                    className="min-h-[54px] rounded-lg border border-transparent"
+                  />
+                );
+              }
 
-            <div
-              className="grid grid-flow-col grid-rows-7 gap-[2px]"
-              style={{
-                gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
-              }}
-              role="img"
-              aria-label={`Calendar heatmap of daily ${metricInfo.description}`}
-            >
-              {cells.map((cell, index) => {
-                if (!cell) {
-                  return (
-                    <div key={`blank-${index}`} className="h-[11px] w-full" />
-                  );
-                }
+              const value = valueFor(cell.usage, metric);
+              const isToday = isCurrentMonth && cell.key === todayKey;
+              const isFuture = cell.date.getTime() > today.getTime();
+              const level = isFuture ? 0 : levelFor(value);
+              const levelStyle = isFuture
+                ? "border-white/[0.02] bg-transparent"
+                : LEVEL_STYLES[metric][level];
+              const dayTextClass = isFuture
+                ? "text-slate-700"
+                : level === 4
+                  ? "text-slate-900"
+                  : level === 3
+                    ? "text-white/90"
+                    : isToday
+                      ? "text-teal-200"
+                      : "text-slate-400";
+              const valueTextClass =
+                level === 4
+                  ? "text-slate-900"
+                  : level === 3
+                    ? "text-white"
+                    : "text-slate-300";
 
-                const value = valueFor(cell.usage, metric);
-                const label = cell.date.toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                });
-                const cacheRate =
-                  cell.usage && cell.usage.inputTokens > 0
-                    ? cell.usage.cachedInputTokens / cell.usage.inputTokens
-                    : 0;
-                const tooltip = cell.usage
-                  ? `${label} · new in ${formatNumber(
+              const dateLabel = cell.date.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              });
+              const cacheRate =
+                cell.usage && cell.usage.inputTokens > 0
+                  ? cell.usage.cachedInputTokens / cell.usage.inputTokens
+                  : 0;
+              const tooltip = isFuture
+                ? `${dateLabel} · upcoming`
+                : cell.usage
+                  ? `${dateLabel} · new in ${formatNumber(
                       uncachedInputTokens(
                         cell.usage.inputTokens,
                         cell.usage.cachedInputTokens,
@@ -290,26 +360,39 @@ export function ActivityHeatmap({
                     )} · cached ${formatPercent(cacheRate)} (${formatNumber(
                       cell.usage.cachedInputTokens,
                     )}) · ${formatNumber(cell.usage.requests)} requests`
-                  : `${label} · no usage`;
+                  : `${dateLabel} · no usage`;
 
-                return (
-                  <div
-                    key={cell.key}
-                    title={tooltip}
-                    className={`h-[11px] w-full rounded-[2px] border transition-transform duration-150 hover:scale-125 ${LEVEL_STYLES[metric][levelFor(value)]}`}
-                  />
-                );
-              })}
-            </div>
+              return (
+                <div
+                  key={cell.key}
+                  title={tooltip}
+                  className={`flex min-h-[54px] flex-col items-start justify-between gap-1 rounded-lg border p-1.5 transition-colors ${levelStyle} ${
+                    isToday
+                      ? "ring-1 ring-teal-300/60 ring-offset-2 ring-offset-panel"
+                      : ""
+                  }`}
+                >
+                  <span
+                    className={`text-[10px] leading-none tabular-nums ${dayTextClass}`}
+                  >
+                    {cell.day}
+                  </span>
+                  {cell.usage && !isFuture ? (
+                    <span
+                      className={`text-[10px] font-semibold leading-none tabular-nums ${valueTextClass}`}
+                    >
+                      {formatCompact(value)}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-600">
-        <span>
-          {daily.filter((entry) => valueFor(entry, metric) > 0).length} active
-          days
-        </span>
+        <span>{activeDays} active days this month</span>
         <div className="flex items-center gap-1.5">
           <span>Less</span>
           {LEVEL_STYLES[metric].map((level) => (

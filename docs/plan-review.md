@@ -22,7 +22,7 @@ why.
 | SQLite storage | Implemented with WAL, migrations, indexes, and deduplication |
 | DeepSeek balance polling | Implemented with status tracking, multi-currency rows, and env-key precedence |
 | Tauri tray + panel | Implemented as a two-action native menu on Windows/macOS, an icon-only StatusNotifierItem on Linux, and a tray-anchored metrics panel |
-| Dashboard heatmap | Implemented as a 365-day calendar with inference/new-input/context/output/cached views |
+| Dashboard activity calendar | Implemented as a month calendar backed by the 365-day daily series, with inference/new-input/context/output/cached views and previous/next month navigation. |
 | Client onboarding | Implemented as copyable Continue/Cline/cURL snippets in Settings |
 | Settings | Implemented for proxy, DeepSeek, desktop behavior, and data clearing |
 
@@ -170,10 +170,10 @@ deterministic mock mode for `npm run dev` without Tauri.
 
 ### 14. Time-zone correctness
 
-Storing UTC epoch seconds is correct, but a heatmap must group by the user’s
-local day. Queries use `date(created_at, 'unixepoch', 'localtime')`, and streak
-calculation uses local calendar dates. Range boundaries are local midnights with
-DST handling.
+Storing UTC epoch seconds is correct, but the calendar must group by the
+user’s local day. Queries use `date(created_at, 'unixepoch', 'localtime')`, and
+streak calculation uses local calendar dates. Range boundaries are local
+midnights with DST handling.
 
 ### 15. Cache tokens were not modeled
 
@@ -184,8 +184,8 @@ portion, so a cache-aware view needs `prompt_eval_cached_count`.
 **Fix:** Migration `0002_cached_prompt_tokens.sql` adds
 `cached_prompt_tokens`. The proxy reads `prompt_eval_cached_count` from the final
 Ollama object and `usage.prompt_tokens_details.cached_tokens` from
-OpenAI-compatible responses. The dashboard, heatmap, model rows, recent-request
-table, tray menu, and panel now expose:
+OpenAI-compatible responses. The dashboard, activity calendar, model rows,
+recent-request table, tray menu, and panel now expose:
 
 ```text
 uncached_input = prompt_eval_count - prompt_eval_cached_count
@@ -203,7 +203,7 @@ producing a rate above 100%.
 | --- | --- |
 
 | Single-click tray activation on GNOME | GNOME's AppIndicator host calls `Activate` on double-click. Single-click activation would require a custom GNOME Shell extension; the Linux tray intentionally uses the stock extension and opens on double-click. |
-| DeepSeek balance overlay on the heatmap | Balance snapshots mix top-ups, grants, and spend, so a balance-delta calendar can mislead. Balance history is stored, and a future toggle can visualize it once the metric is defined carefully. |
+| DeepSeek balance overlay on the activity calendar | Balance snapshots mix top-ups, grants, and spend, so a balance-delta calendar can mislead. Balance history is stored, and a future toggle can visualize it once the metric is defined carefully. |
 | OS keychain for the DeepSeek key | Adds platform-specific runtime dependencies; document the plaintext limitation first |
 | Token estimation for responses without usage | Estimates would undermine trust in the numbers |
 | Proxy auth token | Loopback-only is reasonable for a single-user desktop; revisit for shared machines |
