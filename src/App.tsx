@@ -220,9 +220,9 @@ function DashboardSkeleton() {
           </div>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="card h-64 lg:col-span-3" />
         <div className="card h-64 lg:col-span-2" />
-        <div className="card h-64" />
       </div>
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="card h-72 lg:col-span-2" />

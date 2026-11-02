@@ -179,7 +179,10 @@ For OpenAI-compatible responses, TokenFlow also reads
 `usage.prompt_tokens_details.cached_tokens`. The same fields are shown in the
 dashboard, recent-request table, and tray panel. The activity calendar can
 switch between inference (new input + output), new input, context, output, and
-cached views.
+cached views. Next to it, the DeepSeek card draws an area chart of the total
+available balance with **Month**, **Week**, and **Day** ranges. Month follows
+the month selected in the activity calendar; Week and Day always show the
+current week and day.
 
 ### DeepSeek key precedence
 

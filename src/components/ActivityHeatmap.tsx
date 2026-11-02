@@ -128,12 +128,15 @@ function monthsBetween(earlier: Date, later: Date): number {
 export function ActivityHeatmap({
   daily,
   streakDays,
+  monthOffset,
+  onMonthOffsetChange,
 }: {
   daily: DailyUsage[];
   streakDays: number;
+  monthOffset: number;
+  onMonthOffsetChange: (offset: number) => void;
 }) {
   const [metric, setMetric] = useState<Metric>("total");
-  const [monthOffset, setMonthOffset] = useState(0);
 
   const metricInfo = METRICS.find((entry) => entry.id === metric) ?? METRICS[0];
   const usageByDate = new Map(daily.map((entry) => [entry.date, entry]));
@@ -204,11 +207,11 @@ export function ActivityHeatmap({
   };
 
   const goToPreviousMonth = () => {
-    setMonthOffset((current) => Math.min(maxMonthOffset, current + 1));
+    onMonthOffsetChange(Math.min(maxMonthOffset, activeOffset + 1));
   };
 
   const goToNextMonth = () => {
-    setMonthOffset((current) => Math.max(0, current - 1));
+    onMonthOffsetChange(Math.max(0, activeOffset - 1));
   };
 
   return (
@@ -280,7 +283,7 @@ export function ActivityHeatmap({
         {!isCurrentMonth ? (
           <button
             type="button"
-            onClick={() => setMonthOffset(0)}
+            onClick={() => onMonthOffsetChange(0)}
             className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[10px] font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
           >
             Today
@@ -288,106 +291,104 @@ export function ActivityHeatmap({
         ) : null}
       </div>
 
-      <div className="mt-3 overflow-x-auto pb-1">
-        <div className="min-w-[560px]">
-          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-slate-600">
-            {WEEKDAYS.map((weekday) => (
-              <span key={weekday} className="py-1">
-                {weekday}
-              </span>
-            ))}
-          </div>
+      <div className="mt-3 pb-1">
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-slate-600">
+          {WEEKDAYS.map((weekday) => (
+            <span key={weekday} className="py-1">
+              {weekday}
+            </span>
+          ))}
+        </div>
 
-          <div
-            className="mt-1 grid grid-cols-7 gap-1"
-            role="img"
-            aria-label={`Calendar heatmap of daily ${metricInfo.description} for ${monthLabel}`}
-          >
-            {calendarCells.map((cell, index) => {
-              if (!cell) {
-                return (
-                  <div
-                    key={`blank-${index}`}
-                    className="min-h-[54px] rounded-lg border border-transparent"
-                  />
-                );
-              }
-
-              const value = valueFor(cell.usage, metric);
-              const isToday = isCurrentMonth && cell.key === todayKey;
-              const isFuture = cell.date.getTime() > today.getTime();
-              const level = isFuture ? 0 : levelFor(value);
-              const levelStyle = isFuture
-                ? "border-white/[0.02] bg-transparent"
-                : LEVEL_STYLES[metric][level];
-              const dayTextClass = isFuture
-                ? "text-slate-700"
-                : level === 4
-                  ? "text-slate-900"
-                  : level === 3
-                    ? "text-white/90"
-                    : isToday
-                      ? "text-teal-200"
-                      : "text-slate-400";
-              const valueTextClass =
-                level === 4
-                  ? "text-slate-900"
-                  : level === 3
-                    ? "text-white"
-                    : "text-slate-300";
-
-              const dateLabel = cell.date.toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              });
-              const cacheRate =
-                cell.usage && cell.usage.inputTokens > 0
-                  ? cell.usage.cachedInputTokens / cell.usage.inputTokens
-                  : 0;
-              const tooltip = isFuture
-                ? `${dateLabel} · upcoming`
-                : cell.usage
-                  ? `${dateLabel} · new in ${formatNumber(
-                      uncachedInputTokens(
-                        cell.usage.inputTokens,
-                        cell.usage.cachedInputTokens,
-                      ),
-                    )} · context ${formatNumber(
-                      cell.usage.inputTokens,
-                    )} · out ${formatNumber(
-                      cell.usage.outputTokens,
-                    )} · cached ${formatPercent(cacheRate)} (${formatNumber(
-                      cell.usage.cachedInputTokens,
-                    )}) · ${formatNumber(cell.usage.requests)} requests`
-                  : `${dateLabel} · no usage`;
-
+        <div
+          className="mt-1 grid grid-cols-7 gap-1"
+          role="img"
+          aria-label={`Calendar heatmap of daily ${metricInfo.description} for ${monthLabel}`}
+        >
+          {calendarCells.map((cell, index) => {
+            if (!cell) {
               return (
                 <div
-                  key={cell.key}
-                  title={tooltip}
-                  className={`flex min-h-[54px] flex-col items-start justify-between gap-1 rounded-lg border p-1.5 transition-colors ${levelStyle} ${
-                    isToday
-                      ? "ring-1 ring-teal-300/60 ring-offset-2 ring-offset-panel"
-                      : ""
-                  }`}
-                >
-                  <span
-                    className={`text-[10px] leading-none tabular-nums ${dayTextClass}`}
-                  >
-                    {cell.day}
-                  </span>
-                  {cell.usage && !isFuture ? (
-                    <span
-                      className={`text-[10px] font-semibold leading-none tabular-nums ${valueTextClass}`}
-                    >
-                      {formatCompact(value)}
-                    </span>
-                  ) : null}
-                </div>
+                  key={`blank-${index}`}
+                  className="min-h-[54px] rounded-lg border border-transparent"
+                />
               );
-            })}
-          </div>
+            }
+
+            const value = valueFor(cell.usage, metric);
+            const isToday = isCurrentMonth && cell.key === todayKey;
+            const isFuture = cell.date.getTime() > today.getTime();
+            const level = isFuture ? 0 : levelFor(value);
+            const levelStyle = isFuture
+              ? "border-white/[0.02] bg-transparent"
+              : LEVEL_STYLES[metric][level];
+            const dayTextClass = isFuture
+              ? "text-slate-700"
+              : level === 4
+                ? "text-slate-900"
+                : level === 3
+                  ? "text-white/90"
+                  : isToday
+                    ? "text-teal-200"
+                    : "text-slate-400";
+            const valueTextClass =
+              level === 4
+                ? "text-slate-900"
+                : level === 3
+                  ? "text-white"
+                  : "text-slate-300";
+
+            const dateLabel = cell.date.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            });
+            const cacheRate =
+              cell.usage && cell.usage.inputTokens > 0
+                ? cell.usage.cachedInputTokens / cell.usage.inputTokens
+                : 0;
+            const tooltip = isFuture
+              ? `${dateLabel} · upcoming`
+              : cell.usage
+                ? `${dateLabel} · new in ${formatNumber(
+                    uncachedInputTokens(
+                      cell.usage.inputTokens,
+                      cell.usage.cachedInputTokens,
+                    ),
+                  )} · context ${formatNumber(
+                    cell.usage.inputTokens,
+                  )} · out ${formatNumber(
+                    cell.usage.outputTokens,
+                  )} · cached ${formatPercent(cacheRate)} (${formatNumber(
+                    cell.usage.cachedInputTokens,
+                  )}) · ${formatNumber(cell.usage.requests)} requests`
+                : `${dateLabel} · no usage`;
+
+            return (
+              <div
+                key={cell.key}
+                title={tooltip}
+                className={`flex min-h-[54px] min-w-0 flex-col items-start justify-between gap-1 rounded-lg border p-1.5 transition-colors ${levelStyle} ${
+                  isToday
+                    ? "ring-1 ring-teal-300/60 ring-offset-2 ring-offset-panel"
+                    : ""
+                }`}
+              >
+                <span
+                  className={`text-[10px] leading-none tabular-nums ${dayTextClass}`}
+                >
+                  {cell.day}
+                </span>
+                {cell.usage && !isFuture ? (
+                  <span
+                    className={`text-[10px] font-semibold leading-none tabular-nums ${valueTextClass}`}
+                  >
+                    {formatCompact(value)}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
 
