@@ -180,9 +180,9 @@ For OpenAI-compatible responses, TokenFlow also reads
 dashboard, recent-request table, and tray panel. The activity calendar can
 switch between inference (new input + output), new input, context, output, and
 cached views. Next to it, the DeepSeek card draws an area chart of the total
-available balance with **Month**, **Week**, and **Day** ranges. Month follows
-the month selected in the activity calendar; Week and Day always show the
-current week and day.
+available balance with **Month**, **Week**, and **Day** ranges. **Week** is the
+default and always shows the current Sunday–Saturday week. **Month** follows the
+month selected in the activity calendar; **Day** always shows today.
 
 ### DeepSeek key precedence
 

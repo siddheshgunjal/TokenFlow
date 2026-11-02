@@ -140,7 +140,7 @@ export function BalanceChart({
   monthOffset: number;
   refreshKey: number;
 }) {
-  const [range, setRange] = useState<ChartRange>("month");
+  const [range, setRange] = useState<ChartRange>("week");
   const [snapshots, setSnapshots] = useState<BalanceSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
