@@ -1,0 +1,363 @@
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to rebuild (leave empty for an artifact-only dry run)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      upload: ${{ steps.meta.outputs.upload }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
+          if [ -n "$TAG" ]; then
+            node scripts/check-release-version.mjs --tag "$TAG"
+          else
+            node scripts/check-release-version.mjs
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -n "$TAG" ]; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add the building note to the release
+        if: steps.meta.outputs.tag != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: node scripts/release-notes.mjs add --tag "$TAG"
+
+  linux:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            script: bundle:linux:x64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            script: bundle:linux:arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file patchelf rpm \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            librsvg2-dev libssl-dev libxdo-dev libdbus-1-dev libfuse2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build ${{ matrix.arch }} bundles
+        run: npm run ${{ matrix.script }}
+
+      - name: Collect normalized assets
+        shell: bash
+        run: >-
+          bash scripts/collect-bundles.sh
+          --platform linux
+          --arch ${{ matrix.arch }}
+          --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  windows:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+            script: bundle:windows:x64
+          - runner: windows-11-arm
+            arch: aarch64
+            target: aarch64-pc-windows-msvc
+            script: bundle:windows:arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build ${{ matrix.arch }} installer
+        shell: bash
+        run: npm run ${{ matrix.script }}
+
+      - name: Collect normalized assets
+        shell: bash
+        run: >-
+          bash scripts/collect-bundles.sh
+          --platform windows
+          --arch ${{ matrix.arch }}
+          --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  macos:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x86_64
+            target: x86_64-apple-darwin
+            script: bundle:macos:x64
+          - runner: macos-15
+            arch: aarch64
+            target: aarch64-apple-darwin
+            script: bundle:macos:arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build ${{ matrix.arch }} DMG (ad-hoc signed)
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run ${{ matrix.script }}
+
+      - name: Collect normalized assets
+        shell: bash
+        run: >-
+          bash scripts/collect-bundles.sh
+          --platform macos
+          --arch ${{ matrix.arch }}
+          --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  flatpak:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Install Flatpak tooling
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream elfutils
+
+      - name: Install runtime, SDK, and extensions
+        shell: bash
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.gnome.Platform//51 \
+            org.gnome.Sdk//51 \
+            org.freedesktop.Sdk.Extension.node22//26.08 \
+            org.freedesktop.Sdk.Extension.rust-stable//26.08
+
+      - name: Validate metadata
+        shell: bash
+        run: |
+          appstreamcli validate --no-net flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml
+          appstreamcli validate --no-net packaging/io.github.siddheshgunjal.TokenFlow.metainfo.xml
+
+      - name: Build Flatpak
+        shell: bash
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then
+            bash scripts/build-flatpak.sh --release
+          else
+            bash scripts/build-flatpak.sh
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-${{ matrix.arch }}
+          path: release/*.flatpak
+          if-no-files-found: error
+
+  flathub-manifest:
+    needs: preflight
+    if: needs.preflight.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Render future Flathub submission manifest
+        run: node scripts/prepare-flatpak-release.mjs --render-flathub
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flathub-manifest-v${{ needs.preflight.outputs.version }}
+          path: release/flathub/*.flathub.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [preflight, linux, windows, macos, flatpak]
+    if: needs.preflight.outputs.upload == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.preflight.outputs.tag }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-x86_64"
+          path: release
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-aarch64"
+          path: release
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          rm -f release/SHA256SUMS
+          (cd release && sha256sum * > SHA256SUMS)
+          cat release/SHA256SUMS
+
+      - name: Upload assets to the published release
+        shell: bash
+        run: |
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" release/* --clobber
+
+      - name: Remove the building note
+        shell: bash
+        continue-on-error: true
+        run: node scripts/release-notes.mjs remove --tag "$TAG"
