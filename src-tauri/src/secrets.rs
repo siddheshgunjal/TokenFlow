@@ -5,8 +5,8 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{db::Db, error::AppError, settings};
 
 /// Keychain service name. This intentionally matches the Tauri/Flatpak app
-/// identifier; changing it would orphan existing credentials.
-pub const SERVICE: &str = "io.tokenflow.desktop";
+/// identifier; changing it orphans existing credentials.
+pub const SERVICE: &str = "io.github.siddheshgunjal.TokenFlow";
 pub const DEEPSEEK_ACCOUNT: &str = "deepseek-api-key";
 pub const DEEPSEEK_KEY_ENV: &str = "DEEPSEEK_API_KEY";
 

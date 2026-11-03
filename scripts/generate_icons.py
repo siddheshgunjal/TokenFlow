@@ -128,10 +128,20 @@ def main() -> None:
     resized(icon, 32).save(ICONS / "32x32.png")
     resized(icon, 128).save(ICONS / "128x128.png")
     resized(icon, 256).save(ICONS / "128x128@2x.png")
+    resized(icon, 256).save(ICONS / "256x256.png")
+    resized(icon, 512).save(ICONS / "512x512.png")
     icon.save(
         ICONS / "icon.ico",
         format="ICO",
-        sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+        sizes=[
+            (16, 16),
+            (24, 24),
+            (32, 32),
+            (48, 48),
+            (64, 64),
+            (128, 128),
+            (256, 256),
+        ],
     )
     write_icns(ICONS / "icon.icns", icon)
 
