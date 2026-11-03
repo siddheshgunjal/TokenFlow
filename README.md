@@ -79,14 +79,14 @@ Debian / Ubuntu:
 ```bash
 sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  libxdo-dev libssl-dev librsvg2-dev libdbus-1-dev
 ```
 
 Fedora:
 
 ```bash
-sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file \
-  libappindicator-gtk3-devel librsvg2-devel
+sudo dnf install webkit2gtk4.1-devel openssl-devel dbus-devel curl wget file \
+  libxdo-devel librsvg2-devel
 sudo dnf group install "c-development"
 ```
 
@@ -94,7 +94,7 @@ Arch:
 
 ```bash
 sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl \
-  appmenu-gtk-module libappindicator-gtk3 librsvg
+  librsvg
 ```
 
 TokenFlow stores the DeepSeek API key in the OS keychain. On Linux this uses
@@ -134,8 +134,29 @@ npm run tauri dev
 Build a production bundle for the current platform:
 
 ```bash
+npm run version:sync
 npm run tauri build
 ```
+
+For release-shaped, normalized bundles use the platform scripts instead:
+
+```bash
+npm run bundle:linux:x64
+npm run bundle:linux:arm64
+npm run bundle:windows:x64
+npm run bundle:windows:arm64
+npm run bundle:macos:x64
+npm run bundle:macos:arm64
+npm run bundle:flatpak
+```
+
+The full distribution matrix, local prerequisites, Flatpak details, and install
+notes are in [`docs/packaging.md`](docs/packaging.md). The GitHub release
+workflow builds all supported assets on native runners.
+
+> macOS builds are ad-hoc signed and not notarized, so Gatekeeper may require
+> **Open Anyway** or clearing the quarantine attribute. Windows installers are
+> unsigned, so SmartScreen may warn. See [`docs/packaging.md`](docs/packaging.md).
 
 Useful scripts:
 
@@ -144,7 +165,15 @@ Useful scripts:
 | `npm run dev` | Vite-only browser preview with deterministic mock data |
 | `npm run typecheck` | TypeScript check |
 | `npm run tauri dev` | Run the desktop app with hot reload |
-| `npm run tauri build` | Build platform bundles |
+| `npm run version:sync` | Propagate the root `VERSION` file to derived files |
+| `npm run version:check` | Fail if any derived version is stale |
+| `npm run bundle:linux:x64` | Build `.deb`, `.rpm`, and AppImage for x86_64 |
+| `npm run bundle:linux:arm64` | Build `.deb`, `.rpm`, and AppImage for aarch64 |
+| `npm run bundle:windows:x64` | Build the x86_64 NSIS `.exe` |
+| `npm run bundle:windows:arm64` | Build the aarch64 NSIS `.exe` |
+| `npm run bundle:macos:x64` | Build the x86_64 `.dmg` |
+| `npm run bundle:macos:arm64` | Build the aarch64 `.dmg` |
+| `npm run bundle:flatpak` | Build the host-architecture `.flatpak` |
 | `npm run icons` | Regenerate `src-tauri/icons` from `scripts/generate_icons.py` |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | Rust lint |
 
@@ -246,7 +275,7 @@ Saved settings take precedence over environment defaults after the first save
 restart; the Settings screen shows a banner when a restart is needed.
 
 Inside a Flatpak, host environment variables are not inherited. Use
-`flatpak run --env=DEEPSEEK_API_KEY=... io.tokenflow.desktop`. See
+`flatpak run --env=DEEPSEEK_API_KEY=... io.github.siddheshgunjal.TokenFlow`. See
 [`docs/flatpak.md`](docs/flatpak.md) for the required sandbox permissions and
 the Flatpak test matrix.
 
@@ -264,9 +293,10 @@ the Flatpak test matrix.
   Windows Credential Manager, or Linux Secret Service) and is only loaded into
   process memory while TokenFlow is running.
 - The database lives in Tauri’s app data directory for the identifier
-  `io.tokenflow.desktop` (for example `~/.local/share/io.tokenflow.desktop/` on
-  Linux, `~/Library/Application Support/io.tokenflow.desktop/` on macOS, and
-  `%APPDATA%\io.tokenflow.desktop\` on Windows).
+  `io.github.siddheshgunjal.TokenFlow` (for example
+  `~/.local/share/io.github.siddheshgunjal.TokenFlow/` on Linux,
+  `~/Library/Application Support/io.github.siddheshgunjal.TokenFlow/` on macOS,
+  and `%APPDATA%\io.github.siddheshgunjal.TokenFlow\` on Windows).
 - `Settings → Danger zone` deletes usage and balance history while keeping
   settings and keys.
 - CORS on the proxy is limited to loopback and Tauri origins. Native clients do
@@ -277,11 +307,13 @@ the Flatpak test matrix.
 - **Windows and macOS** keep the native tray menu, reduced to two actions:
   **Show Widget** and **Quit TokenFlow**. Left-clicking the tray icon toggles the
   panel; right-click opens the menu. There are no metric rows or tray labels.
-- **Linux (GNOME/AppIndicator)** uses an icon-only StatusNotifierItem. There is
-  no label next to the icon and no menu with actions. On GNOME, **double-click**
-  the tray icon to open the widget anchored to the icon; the stock AppIndicator
-  host only sends `Activate` on double-click, so a single click is intentionally
-  a no-op when the menu is empty. Other SNI hosts may activate on a single click.
+- **Linux (GNOME/AppIndicator)** uses a StatusNotifierItem with an embedded
+  icon. There is no label next to the icon. **Double-click** the tray icon to
+  open the widget; a single click opens a small menu with **Open TokenFlow**
+  and **Quit TokenFlow**. Middle-click also opens the widget. Other SNI hosts
+  may activate on a single click.
+- The widget is anchored to the tray activation hint, so it opens on the
+  monitor that owns the tray icon, directly below or above the panel.
 - On Linux Wayland, TokenFlow automatically runs through XWayland when `DISPLAY`
   is available, because Wayland does not let a client position a regular
   toplevel window. This is what makes the widget appear under the tray icon
@@ -343,9 +375,14 @@ TokenFlow/
 │   │   └── tray.rs              # Platform tray, live metrics, window anchor
 │   ├── Cargo.toml
 │   └── tauri.conf.json
+├── flatpak/                     # Flatpak manifests and metadata
+├── packaging/                   # deb/rpm AppStream metadata
+├── scripts/                     # Release, version, and Flatpak build helpers
 ├── docs/plan-review.md
 ├── docs/flatpak.md
-├── scripts/generate_icons.py
+├── docs/packaging.md
+├── docs/flathub.md
+├── VERSION                      # Single version source of truth
 ├── index.html
 ├── widget.html
 ├── package.json
@@ -359,7 +396,7 @@ TokenFlow/
 | Crate / package | Role |
 | --- | --- |
 | `tauri` 2 | Desktop runtime, windows, tray, IPC |
-| `libappindicator` (Linux) | Icon-only StatusNotifierItem with `Activate` |
+| `ksni` (Linux) | StatusNotifierItem with `Activate`, embedded icon, and a small menu |
 | `axum` 0.7 | Ollama proxy server |
 | `tower-http` 0.5 | Loopback-restricted CORS |
 | `reqwest` 0.12 | Upstream proxy + DeepSeek HTTPS (rustls) |
@@ -376,9 +413,9 @@ TokenFlow/
 
 ## Roadmap / deferred hardening
 
-- Flatpak packaging (required permissions and test matrix are documented in
-  [`docs/flatpak.md`](docs/flatpak.md); the manifest is a separate workstream).
 - Code signing, macOS notarization, and auto-updater.
+- Flathub submission when a Flathub account is available; the manifest and
+  metadata are already prepared in [`docs/flathub.md`](docs/flathub.md).
 - Launch-at-login and single-instance handling.
 - CSV/JSON export and configurable retention.
 - A proxy auth token for shared machines (loopback alone is not an auth boundary).

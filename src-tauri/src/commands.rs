@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, State};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State};
 use zeroize::Zeroize;
 
 use crate::{
@@ -249,18 +249,9 @@ const WIDGET_LOGICAL_HEIGHT: f64 = 320.0;
 /// when the widget is shown on launch).
 fn position_widget(window: &tauri::WebviewWindow, state: &AppState) {
     let anchor = state.tray_anchor();
-    let (anchor, anchor_logical, monitor) = match anchor {
-        Some(TrayAnchor::Logical(x, y)) => {
-            let monitor = monitor_for_logical_point(window, x, y)
-                .or_else(|| window.current_monitor().ok().flatten());
-            let scale = monitor.as_ref().map(Monitor::scale_factor).unwrap_or(1.0);
-            (Some((x * scale, y * scale)), Some((x, y)), monitor)
-        }
-        Some(TrayAnchor::Physical(x, y)) => {
-            let monitor = window.monitor_from_point(x, y).ok().flatten();
-            (Some((x, y)), None, monitor)
-        }
-        None => (None, None, window.current_monitor().ok().flatten()),
+    let monitor = match anchor {
+        Some(TrayAnchor::Physical(x, y)) => window.monitor_from_point(x, y).ok().flatten(),
+        None => window.current_monitor().ok().flatten(),
     };
     let Some(monitor) = monitor else {
         return;
@@ -289,29 +280,22 @@ fn position_widget(window: &tauri::WebviewWindow, state: &AppState) {
         (monitor_position.y + monitor_size.height as i32 - size.height as i32 - gap).max(min_y);
 
     let (x, y) = match anchor {
-        Some((anchor_x, anchor_y)) => {
+        Some(TrayAnchor::Physical(anchor_x, anchor_y)) => {
             let anchor_x = anchor_x.round() as i32;
             let anchor_y = anchor_y.round() as i32;
             let x = (anchor_x - size.width as i32 / 2).clamp(min_x, max_x);
 
-            let (top_panel, bottom_panel) = anchor_logical
-                .map(|(_, logical_y)| {
-                    let logical_top = monitor_position.y as f64 / scale;
-                    let logical_bottom = logical_top + monitor_size.height as f64 / scale;
-                    (
-                        logical_y < logical_top + 80.0,
-                        logical_y > logical_bottom - 80.0,
-                    )
-                })
-                .unwrap_or((false, false));
+            let panel_zone = (80.0 * scale).round() as i32;
+            let top_panel = anchor_y < monitor_position.y + panel_zone;
+            let bottom_panel =
+                anchor_y > monitor_position.y + monitor_size.height as i32 - panel_zone;
 
             let y = if top_panel {
                 // Clear the top panel instead of hiding behind it. The minimum
                 // covers GNOME's default 32 px bar plus a small gap.
                 let panel_top = monitor_position.y + (40.0 * scale).round() as i32;
                 (anchor_y + (24.0 * scale).round() as i32).max(panel_top)
-            } else if bottom_panel || anchor_y > monitor_position.y + monitor_size.height as i32 / 2
-            {
+            } else if bottom_panel {
                 anchor_y - size.height as i32 - gap
             } else {
                 anchor_y + gap
@@ -323,26 +307,6 @@ fn position_widget(window: &tauri::WebviewWindow, state: &AppState) {
 
     tracing::debug!(x, y, anchor = ?state.tray_anchor(), "positioned widget window");
     let _ = window.set_position(PhysicalPosition::new(x, y));
-}
-
-/// Finds the monitor containing a point expressed in GNOME stage/logical
-/// coordinates. Mixed-DPI layouts need this because the conversion to physical
-/// pixels depends on which monitor was clicked.
-fn monitor_for_logical_point(window: &tauri::WebviewWindow, x: f64, y: f64) -> Option<Monitor> {
-    window
-        .available_monitors()
-        .ok()?
-        .into_iter()
-        .find(|monitor| {
-            let scale = monitor.scale_factor();
-            let position = monitor.position();
-            let size = monitor.size();
-            let left = position.x as f64 / scale;
-            let top = position.y as f64 / scale;
-            let right = left + size.width as f64 / scale;
-            let bottom = top + size.height as f64 / scale;
-            x >= left && x <= right && y >= top && y <= bottom
-        })
 }
 
 fn secret_error(err: secrets::SecretError) -> AppError {

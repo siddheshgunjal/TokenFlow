@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.siddheshgunjal.TokenFlow</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>TokenFlow</name>
+  <summary>Local token usage analytics for Ollama and DeepSeek</summary>
+  <developer id="io.github.siddheshgunjal">
+    <name>TokenFlow contributors</name>
+  </developer>
+  <launchable type="desktop-id">TokenFlow.desktop</launchable>
+  <url type="homepage">https://github.com/siddheshgunjal/TokenFlow</url>
+  <description>
+    <p>
+      TokenFlow is a local-first desktop companion for Ollama and DeepSeek
+      users. It runs a loopback proxy in front of Ollama, records the token
+      counts reported by the stream, and polls the DeepSeek balance API.
+    </p>
+    <p>
+      Usage history is stored in a local SQLite database, and the DeepSeek API
+      key is kept in the operating system credential store. Telemetry never
+      leaves the machine.
+    </p>
+    <ul>
+      <li>Ollama proxy on 127.0.0.1:11435</li>
+      <li>Input, output, context, and cached-token metrics</li>
+      <li>DeepSeek balance history</li>
+      <li>Native tray and tray-anchored metrics panel</li>
+    </ul>
+  </description>
+  <categories>
+    <category>Development</category>
+    <category>Utility</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>tokenflow</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-11-03"/>
+  </releases>
+</component>

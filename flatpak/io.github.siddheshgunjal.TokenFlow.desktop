@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=TokenFlow
+GenericName=Ollama & DeepSeek Usage Analytics
+Comment=Local token usage analytics for Ollama and DeepSeek
+Exec=tokenflow
+Icon=io.github.siddheshgunjal.TokenFlow
+Terminal=false
+Categories=Development;Utility;
+Keywords=Ollama;DeepSeek;tokens;analytics;
+StartupNotify=true
+StartupWMClass=tokenflow

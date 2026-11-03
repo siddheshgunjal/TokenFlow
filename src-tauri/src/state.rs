@@ -16,16 +16,12 @@ use crate::{
 
 /// Where the widget should be anchored.
 ///
-/// Windows/macOS tray events report physical pixels. Linux StatusNotifierItem
-/// activation reports GNOME stage coordinates, which are logical pixels; they
-/// must be converted with the monitor scale factor before positioning an
-/// XWayland window.
+/// Windows, macOS, and Linux tray activations all report physical screen
+/// coordinates. Linux uses the pointer position at activation because the
+/// status-notifier hint is expressed in logical stage coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TrayAnchor {
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
     Physical(f64, f64),
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    Logical(f64, f64),
 }
 
 /// Shared state injected into Tauri commands and background workers.
@@ -156,22 +152,12 @@ impl AppState {
         let _ = self.events.send(event);
     }
 
-    /// Store a physical-pixel anchor (Windows/macOS tray clicks).
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    /// Store a physical-pixel anchor from a tray activation.
     pub fn set_tray_anchor(&self, x: f64, y: f64) {
         *self
             .tray_anchor
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(TrayAnchor::Physical(x, y));
-    }
-
-    /// Store a logical-pixel anchor (Linux StatusNotifierItem activation).
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub fn set_tray_anchor_logical(&self, x: f64, y: f64) {
-        *self
-            .tray_anchor
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(TrayAnchor::Logical(x, y));
     }
 
     pub fn tray_anchor(&self) -> Option<TrayAnchor> {
