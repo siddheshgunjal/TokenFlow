@@ -22,7 +22,13 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: [
+        "**/src-tauri/**",
+        "**/flatpak/**",
+        "**/release/**",
+        "**/agent_runs/**",
+        "**/.tools/**",
+      ],
     },
   },
   build: {
