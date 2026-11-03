@@ -57,13 +57,12 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Linux tray integration. We drive libappindicator directly so we can connect
-# its `activate` signal and set XAyatanaLabel; Tauri's tray wrapper exposes
-# neither on Linux.
+# Linux tray integration. `ksni` implements StatusNotifierItem directly,
+# including the `Activate` method that libayatana-appindicator does not expose.
+# The icon is embedded as ARGB32 so the host panel never reads sandbox paths.
 [target.'cfg(target_os = "linux")'.dependencies]
-glib = "0.18"
-gtk = "0.18"
-libappindicator-sys = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
+ksni = { version = "0.3", features = ["blocking"] }
 keyring = { version = "3", default-features = false, features = [
     "sync-secret-service",
     "crypto-rust",
