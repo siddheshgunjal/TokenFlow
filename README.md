@@ -5,9 +5,10 @@ Local-first desktop analytics for **Ollama** and **DeepSeek** usage.
 TokenFlow runs a loopback Ollama proxy on `127.0.0.1:11435`, forwards requests to
 your existing Ollama server on `127.0.0.1:11434`, and records input, output, and
 cached-input token counts from the response stream. A separate worker polls the
-official DeepSeek balance API. Everything is stored in a local SQLite database
-and rendered in a Tauri 2 desktop app with a live platform tray and a
-tray-anchored metrics panel.
+official DeepSeek balance API. Usage history is stored in a local SQLite
+database and the DeepSeek key is kept in the OS credential store, all rendered
+in a Tauri 2 desktop app with a live platform tray and a tray-anchored metrics
+panel.
 
 > Status: working scaffold. The Rust backend, proxy, storage, DeepSeek polling,
 > tray, widget window, and dashboard UI are implemented. See
@@ -96,6 +97,13 @@ sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl \
   appmenu-gtk-module libappindicator-gtk3 librsvg
 ```
 
+TokenFlow stores the DeepSeek API key in the OS keychain. On Linux this uses
+Secret Service over D-Bus, so a provider such as `gnome-keyring`, KWallet with
+Secret Service enabled, or KeePassXC must be installed and running. The app
+fails closed with an actionable error if no provider is available. If the
+build cannot find libdbus headers, install your distribution's
+`libdbus-1-dev` (Debian/Ubuntu) or `dbus-devel` (Fedora) package.
+
 ### Windows
 
 1. Install **Microsoft C++ Build Tools** with the “Desktop development with C++”
@@ -159,8 +167,8 @@ Pillow; it is only a build-time asset tool.
 4. Send a request. Input and output counts appear after the final streaming
    chunk (or after a non-streaming response completes), together with cached
    input and cache hit rate when the upstream reports it.
-5. For DeepSeek, add an API key in **Settings** or set `DEEPSEEK_API_KEY` before
-   launching.
+5. For DeepSeek, add an API key in **Settings** (stored in the OS keychain) or
+   set `DEEPSEEK_API_KEY` before launching.
 
 Copyable client snippets are built into the Settings screen and use the currently
 configured proxy port.
@@ -187,11 +195,25 @@ month selected in the activity calendar; **Day** always shows today.
 ### DeepSeek key precedence
 
 1. `DEEPSEEK_API_KEY` environment variable
-2. Key saved through the Settings screen (local SQLite)
+2. OS keychain: macOS Keychain, Windows Credential Manager, or Linux Secret Service
+3. Legacy plaintext SQLite row, only until TokenFlow can migrate it
 
-The environment variable wins. This is intentional: it lets users avoid writing
-the secret to disk. Note that keys saved through the UI are currently stored in
-plaintext SQLite; OS keychain integration is tracked in the plan review.
+The environment variable wins and is never persisted. Keys saved through
+Settings are written to the OS credential store; TokenFlow never returns the key
+to the webview. On the first launch after an upgrade, an existing plaintext
+SQLite key is moved to the keychain and scrubbed from the database with a WAL
+checkpoint and `VACUUM`. If the keychain is unavailable, the legacy key keeps
+working, Settings shows a warning, and a **Retry keychain** action re-attempts
+the migration without restarting the app.
+
+SQLite scrubbing only covers the live database and WAL. Historical backups,
+filesystem snapshots, and SSD remanence are outside the app's control.
+
+On macOS, unsigned development builds may prompt for Keychain access after a
+rebuild because the Keychain ACL is tied to the code signature; a release build
+signed with a stable identity avoids that prompt. In Flatpak, the manifest must
+grant `--talk-name=org.freedesktop.secrets`; see
+[`docs/flatpak.md`](docs/flatpak.md).
 
 ---
 
@@ -223,6 +245,11 @@ Saved settings take precedence over environment defaults after the first save
 (except for the DeepSeek key). Proxy port and upstream URL changes require an app
 restart; the Settings screen shows a banner when a restart is needed.
 
+Inside a Flatpak, host environment variables are not inherited. Use
+`flatpak run --env=DEEPSEEK_API_KEY=... io.tokenflow.desktop`. See
+[`docs/flatpak.md`](docs/flatpak.md) for the required sandbox permissions and
+the Flatpak test matrix.
+
 ---
 
 ## Data and privacy
@@ -232,7 +259,10 @@ restart; the Settings screen shows a banner when a restart is needed.
   balance calls to the configured DeepSeek origin.
 - The database uses SQLite WAL mode and contains `ollama_logs` (including
   `cached_prompt_tokens`), `deepseek_balances`, `deepseek_sync`, and `settings`
-  tables.
+  tables. The DeepSeek key is not stored there after migration.
+- The DeepSeek API key is stored in the OS credential store (macOS Keychain,
+  Windows Credential Manager, or Linux Secret Service) and is only loaded into
+  process memory while TokenFlow is running.
 - The database lives in Tauri’s app data directory for the identifier
   `io.tokenflow.desktop` (for example `~/.local/share/io.tokenflow.desktop/` on
   Linux, `~/Library/Application Support/io.tokenflow.desktop/` on macOS, and
@@ -307,12 +337,14 @@ TokenFlow/
 │   │   ├── main.rs
 │   │   ├── models.rs            # IPC/event DTOs
 │   │   ├── proxy.rs             # Axum proxy + stream inspector
-│   │   ├── settings.rs          # Validation + key handling
+│   │   ├── secrets.rs           # OS keychain + legacy-key migration
+│   │   ├── settings.rs          # Validation + settings DTOs
 │   │   ├── state.rs             # Shared state + event bridge
 │   │   └── tray.rs              # Platform tray, live metrics, window anchor
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── docs/plan-review.md
+├── docs/flatpak.md
 ├── scripts/generate_icons.py
 ├── index.html
 ├── widget.html
@@ -332,6 +364,8 @@ TokenFlow/
 | `tower-http` 0.5 | Loopback-restricted CORS |
 | `reqwest` 0.12 | Upstream proxy + DeepSeek HTTPS (rustls) |
 | `rusqlite` 0.31 (`bundled`) | Embedded storage; no system SQLite dependency |
+| `keyring` 3 | macOS Keychain, Windows Credential Manager, Linux Secret Service |
+| `zeroize` 1 | Wipes secret key material from memory on drop |
 | `tokio` 1 | Runtime, proxy listener, background workers |
 | `chrono` | Local-day aggregation and streak calculation |
 | React 18 + Vite 6 + TypeScript 5.6 | Dashboard and widget |
@@ -342,7 +376,8 @@ TokenFlow/
 
 ## Roadmap / deferred hardening
 
-- OS keychain storage for the DeepSeek key (`keyring` or Tauri stronghold).
+- Flatpak packaging (required permissions and test matrix are documented in
+  [`docs/flatpak.md`](docs/flatpak.md); the manifest is a separate workstream).
 - Code signing, macOS notarization, and auto-updater.
 - Launch-at-login and single-instance handling.
 - CSV/JSON export and configurable retention.
