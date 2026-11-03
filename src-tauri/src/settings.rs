@@ -5,14 +5,15 @@ use serde::{Deserialize, Serialize};
 use crate::{db::Db, error::AppError};
 
 const SETTINGS_KEY: &str = "app_settings";
-pub const DEEPSEEK_KEY: &str = "deepseek_api_key";
-pub const DEEPSEEK_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+/// Legacy plaintext storage key. It is read only to migrate the key into the OS
+/// keychain and is deleted immediately afterwards.
+pub const LEGACY_DEEPSEEK_KEY: &str = "deepseek_api_key";
 
 /// User-facing configuration.
 ///
 /// Environment variables are used only as first-launch defaults (except for the
-/// DeepSeek key, where the environment intentionally takes precedence so a key
-/// never has to be written to disk).
+/// DeepSeek key, which is resolved separately: the environment takes precedence
+/// over the OS keychain and is never persisted).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
@@ -135,42 +136,9 @@ pub struct SettingsView {
     pub settings: Settings,
     pub has_deepseek_api_key: bool,
     pub deepseek_key_source: Option<String>,
+    /// A keychain or migration problem that the Settings screen should show.
+    pub deepseek_key_error: Option<String>,
     pub restart_required: bool,
-}
-
-/// The environment wins over the locally stored key so users can avoid writing
-/// secrets to disk. This precedence is surfaced in the settings UI.
-pub fn deepseek_api_key(db: &Db) -> Option<String> {
-    match env::var(DEEPSEEK_KEY_ENV) {
-        Ok(value) if !value.trim().is_empty() => return Some(value.trim().to_string()),
-        _ => {}
-    }
-
-    match db.get_setting(DEEPSEEK_KEY) {
-        Ok(Some(value)) if !value.trim().is_empty() => Some(value.trim().to_string()),
-        Ok(_) => None,
-        Err(err) => {
-            tracing::warn!(%err, "could not read the DeepSeek API key from settings");
-            None
-        }
-    }
-}
-
-pub fn deepseek_key_source(db: &Db) -> Option<&'static str> {
-    if let Ok(value) = env::var(DEEPSEEK_KEY_ENV) {
-        if !value.trim().is_empty() {
-            return Some("environment");
-        }
-    }
-
-    match db.get_setting(DEEPSEEK_KEY) {
-        Ok(Some(value)) if !value.trim().is_empty() => Some("settings"),
-        Ok(_) => None,
-        Err(err) => {
-            tracing::warn!(%err, "could not determine the DeepSeek API key source");
-            None
-        }
-    }
 }
 
 fn is_loopback(host: &str) -> bool {

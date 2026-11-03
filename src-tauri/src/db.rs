@@ -33,13 +33,19 @@ pub struct Db {
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self, AppError> {
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             std::fs::create_dir_all(parent)?;
         }
 
         let conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.pragma_update(None, "foreign_keys", true)?;
+        // Legacy API keys are removed with `delete_setting_secure`. Zeroing
+        // deleted cells keeps the plaintext out of free pages.
+        conn.pragma_update(None, "secure_delete", true)?;
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         run_migrations(&conn)?;
@@ -80,9 +86,22 @@ impl Db {
         Ok(())
     }
 
-    pub fn delete_setting(&self, key: &str) -> Result<(), AppError> {
+    /// Deletes a setting and scrubs the SQLite file so a removed secret is not
+    /// left in the WAL or in free pages. Used only for the legacy API key.
+    pub fn delete_setting_secure(&self, key: &str) -> Result<(), AppError> {
         let conn = self.lock();
-        conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        let deleted = conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        if deleted == 0 {
+            return Ok(());
+        }
+
+        if let Err(err) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+            tracing::debug!(%err, "could not truncate the WAL after deleting a secret");
+        }
+
+        // VACUUM rewrites the database without free pages. It runs only when a
+        // legacy secret was actually removed, so normal startup pays no cost.
+        conn.execute_batch("VACUUM;")?;
         Ok(())
     }
 
@@ -537,7 +556,7 @@ fn local_midnight(date: NaiveDate) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{balance_history, cache_hit_rate, run_migrations};
+    use super::{balance_history, cache_hit_rate, run_migrations, Db};
     use rusqlite::{params, Connection};
 
     #[test]
@@ -572,6 +591,41 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].total_balance, "10.00");
         assert_eq!(rows[1].total_balance, "9.00");
+    }
+
+    #[test]
+    fn deleting_a_legacy_secret_scrubs_the_database_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("tokenflow.db");
+        const SECRET: &str = "sk-test-plaintext-secret";
+
+        {
+            let db = Db::open(&path).expect("database");
+            db.set_setting("deepseek_api_key", SECRET)
+                .expect("set legacy key");
+            db.delete_setting_secure("deepseek_api_key")
+                .expect("secure delete");
+            assert!(db
+                .get_setting("deepseek_api_key")
+                .expect("read legacy key")
+                .is_none());
+        }
+
+        for candidate in [path.clone(), path.with_extension("db-wal")] {
+            if let Ok(bytes) = std::fs::read(&candidate) {
+                assert!(
+                    !contains_bytes(&bytes, SECRET.as_bytes()),
+                    "secret remained in {}",
+                    candidate.display()
+                );
+            }
+        }
+    }
+
+    fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
     }
 
     #[test]

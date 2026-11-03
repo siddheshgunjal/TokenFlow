@@ -3,7 +3,6 @@ use std::time::Duration;
 use crate::{
     error::AppError,
     models::{BalanceInfoInput, BalanceSnapshot, DeepSeekBalanceResponse, MetricEvent},
-    settings,
     state::AppState,
 };
 
@@ -32,7 +31,7 @@ pub fn spawn_worker(state: AppState) {
         tokio::time::sleep(Duration::from_secs(3)).await;
 
         loop {
-            if settings::deepseek_api_key(&state.db).is_some() {
+            if state.has_deepseek_key() {
                 if let Err(err) = refresh(&state).await {
                     tracing::warn!(%err, "DeepSeek balance refresh failed");
                 }
@@ -50,7 +49,7 @@ pub fn spawn_worker(state: AppState) {
 /// Fetches `/user/balance`, persists every currency returned by DeepSeek, and
 /// publishes one event per balance so open windows can update immediately.
 pub async fn refresh(state: &AppState) -> Result<Vec<BalanceSnapshot>, DeepSeekError> {
-    let api_key = settings::deepseek_api_key(&state.db).ok_or(DeepSeekError::MissingKey)?;
+    let api_key = state.deepseek_secret().ok_or(DeepSeekError::MissingKey)?;
     let settings = state.settings();
     let url = format!(
         "{}/user/balance",
@@ -60,7 +59,7 @@ pub async fn refresh(state: &AppState) -> Result<Vec<BalanceSnapshot>, DeepSeekE
     let response = state
         .deepseek_http
         .get(&url)
-        .bearer_auth(&api_key)
+        .bearer_auth(api_key.expose())
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await?;

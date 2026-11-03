@@ -84,16 +84,19 @@ export interface Settings {
   showWidgetOnStart: boolean;
 }
 
+export type DeepSeekKeySource = "environment" | "keychain" | "legacy";
+
 export interface SettingsView {
   settings: Settings;
   hasDeepseekApiKey: boolean;
-  deepseekKeySource: string | null;
+  deepseekKeySource: DeepSeekKeySource | null;
+  deepseekKeyError: string | null;
   restartRequired: boolean;
 }
 
 export interface DeepSeekStatus {
   hasApiKey: boolean;
-  keySource: string | null;
+  keySource: DeepSeekKeySource | null;
   lastSuccessAt: number | null;
   lastError: string | null;
   lastErrorAt: number | null;

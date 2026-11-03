@@ -223,13 +223,14 @@ export const mockSettings: Settings = {
 export const mockSettingsView: SettingsView = {
   settings: mockSettings,
   hasDeepseekApiKey: true,
-  deepseekKeySource: "settings",
+  deepseekKeySource: "keychain",
+  deepseekKeyError: null,
   restartRequired: false,
 };
 
 export const mockDeepSeekStatus: DeepSeekStatus = {
   hasApiKey: true,
-  keySource: "settings",
+  keySource: "keychain",
   lastSuccessAt: Math.floor(Date.now() / 1000) - 420,
   lastError: null,
   lastErrorAt: null,

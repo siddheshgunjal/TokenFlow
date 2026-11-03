@@ -118,9 +118,15 @@ last error in Settings. HTTPS is enforced unless the base URL is loopback.
 The draft reads `DEEPSEEK_API_KEY` but mentions a “secure local storage or
 settings DB” without choosing one.
 
-**Fix for v0.1:** Environment variable takes precedence; otherwise the key is
-saved in the local SQLite settings table. The UI discloses this. OS keychain
-storage is the highest-priority hardening item before a public release.
+**Resolved:** `src-tauri/src/secrets.rs` stores the key in the OS credential
+store via `keyring` 3: macOS Keychain, Windows Credential Manager, and Linux
+Secret Service. Environment variables still take precedence and are never
+persisted. On startup, a legacy plaintext SQLite row is migrated to the
+keychain, verified with a read-back, and scrubbed with `secure_delete`, a WAL
+checkpoint, and `VACUUM`. If the keychain is unavailable, the legacy key keeps
+working, the Settings screen warns, and a retry command re-attempts migration.
+Saving fails closed rather than falling back to SQLite. The Flatpak sandbox
+requirements are documented in `docs/flatpak.md`.
 
 ### 10. Tauri 2 needs explicit capabilities
 
@@ -204,7 +210,7 @@ producing a rate above 100%.
 
 | Single-click tray activation on GNOME | GNOME's AppIndicator host calls `Activate` on double-click. Single-click activation would require a custom GNOME Shell extension; the Linux tray intentionally uses the stock extension and opens on double-click. |
 | DeepSeek balance overlay on the activity calendar | Balance snapshots mix top-ups, grants, and spend, so a balance-delta calendar can mislead. Balance history is stored, and a future toggle can visualize it once the metric is defined carefully. |
-| OS keychain for the DeepSeek key | Adds platform-specific runtime dependencies; document the plaintext limitation first |
+| Flatpak packaging | Requires runtime/library work (WebKitGTK, libayatana-appindicator, vendored sources) and Flathub metadata; required permissions and the test matrix are documented in `docs/flatpak.md`. |
 | Token estimation for responses without usage | Estimates would undermine trust in the numbers |
 | Proxy auth token | Loopback-only is reasonable for a single-user desktop; revisit for shared machines |
 | Auto-updater / signing | Requires certificates and release infrastructure |
@@ -219,8 +225,8 @@ producing a rate above 100%.
 
 - `cargo fmt --check` — clean.
 - `cargo clippy --offline --all-targets -- -D warnings` — clean.
-- `cargo test --offline` — 2 tests for cache-rate clamping and migration
-  application.
+- `cargo test` — cache-rate clamping, migration application, keychain
+  migration/precedence, and SQLite scrubbing tests.
 - `npm run typecheck` — passed.
 - `npm run build` — Vite built both `index.html` and `widget.html` entry points
   successfully.
@@ -246,7 +252,8 @@ producing a rate above 100%.
    JSON, interrupted streams, duplicate final chunks, and cached-count variants.
 3. Verify tray click/menu actions and widget anchoring on Windows, macOS, X11,
    and Wayland.
-4. Move the DeepSeek secret to the OS keychain.
+4. Verify OS keychain save/read/delete on macOS, Windows, GNOME, and KDE; only
+   the Linux path is exercised locally.
 5. Add a single-instance guard so two app launches do not race for port 11435.
 6. Verify transparent panel behavior on Linux desktops with and without a
    compositor.
