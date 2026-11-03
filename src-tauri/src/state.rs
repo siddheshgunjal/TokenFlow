@@ -10,6 +10,7 @@ use crate::{
     db::Db,
     error::AppError,
     models::{MetricEvent, ProxyStatus},
+    secrets::{self, KeySource, KeyringStore, Secret, SecretState},
     settings::Settings,
 };
 
@@ -35,6 +36,7 @@ pub struct AppState {
     pub deepseek_http: reqwest::Client,
     proxy_status: Arc<RwLock<ProxyStatus>>,
     settings: Arc<RwLock<Settings>>,
+    secrets: Arc<RwLock<SecretState>>,
     /// Last tray icon activation position.
     tray_anchor: Arc<RwLock<Option<TrayAnchor>>>,
     app: AppHandle,
@@ -47,6 +49,10 @@ impl AppState {
 
         let db = Db::open(&data_dir.join("tokenflow.db"))?;
         let settings = Settings::load(&db)?;
+        let secret_state = secrets::resolve(&db, &KeyringStore::new());
+        if let Some(error) = secret_state.error() {
+            tracing::warn!(%error, "DeepSeek key storage is degraded");
+        }
         let (events, _) = broadcast::channel(256);
 
         let deepseek_http = reqwest::Client::builder()
@@ -67,6 +73,7 @@ impl AppState {
             deepseek_http,
             proxy_status: Arc::new(RwLock::new(ProxyStatus::default())),
             settings: Arc::new(RwLock::new(settings)),
+            secrets: Arc::new(RwLock::new(secret_state)),
             tray_anchor: Arc::new(RwLock::new(None)),
             app: app.clone(),
         })
@@ -86,6 +93,44 @@ impl AppState {
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = settings;
         Ok(())
+    }
+
+    /// The active DeepSeek key. Cloning creates a new zeroizing allocation; the
+    /// original copy in state remains until it is replaced or the app exits.
+    pub fn deepseek_secret(&self) -> Option<Secret> {
+        self.secrets
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .key()
+    }
+
+    pub fn has_deepseek_key(&self) -> bool {
+        self.secrets
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .has_key()
+    }
+
+    pub fn deepseek_key_source(&self) -> Option<KeySource> {
+        self.secrets
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .source()
+    }
+
+    pub fn deepseek_key_error(&self) -> Option<String> {
+        self.secrets
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .error()
+            .map(str::to_string)
+    }
+
+    pub fn replace_secret_state(&self, state: SecretState) {
+        *self
+            .secrets
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = state;
     }
 
     pub fn proxy_status(&self) -> ProxyStatus {

@@ -12,6 +12,9 @@ pub enum AppError {
     #[error("configuration error: {0}")]
     Config(String),
 
+    #[error("{0}")]
+    Secret(String),
+
     #[error("Tauri error: {0}")]
     Tauri(#[from] tauri::Error),
 }

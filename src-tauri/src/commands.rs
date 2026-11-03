@@ -1,9 +1,11 @@
 use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, State};
+use zeroize::Zeroize;
 
 use crate::{
     error::AppError,
     models::{BalanceSnapshot, ClearDataResult, DashboardSummary, DeepSeekStatus, ProxyStatus},
-    settings::{self, Settings, SettingsView},
+    secrets::{self, KeyringStore, SecretStore},
+    settings::{Settings, SettingsView},
     state::{AppState, TrayAnchor},
 };
 
@@ -69,15 +71,36 @@ pub async fn save_deepseek_api_key(
 ) -> Result<SettingsView, String> {
     let state = state.inner().clone();
     let key = api_key
-        .map(|value| value.trim().to_string())
+        .map(|mut value| {
+            let trimmed = value.trim().to_string();
+            value.zeroize();
+            zeroize::Zeroizing::new(trimmed)
+        })
         .filter(|value| !value.is_empty());
 
     let view = tokio::task::spawn_blocking({
         let state = state.clone();
         move || {
-            match key {
-                Some(key) => state.db.set_setting(settings::DEEPSEEK_KEY, &key)?,
-                None => state.db.delete_setting(settings::DEEPSEEK_KEY)?,
+            let store = KeyringStore::new();
+            let mut delete_error = None;
+            match key.as_ref() {
+                Some(key) => store
+                    .set(secrets::DEEPSEEK_ACCOUNT, key.as_str())
+                    .map_err(secret_error)?,
+                None => {
+                    secrets::remove_legacy_key(&state.db).map_err(|err| {
+                        AppError::Secret(format!(
+                            "The legacy SQLite key could not be removed: {err}"
+                        ))
+                    })?;
+                    delete_error = store.delete(secrets::DEEPSEEK_ACCOUNT).err();
+                }
+            }
+
+            let resolution = secrets::resolve(&state.db, &store);
+            state.replace_secret_state(resolution);
+            if let Some(err) = delete_error {
+                return Err(secret_error(err));
             }
             settings_view(&state)
         }
@@ -96,6 +119,22 @@ pub async fn save_deepseek_api_key(
     }
 
     Ok(view)
+}
+
+/// Re-reads the OS keychain and retries a pending legacy migration. This is
+/// exposed so users can recover from a transiently locked/unavailable keyring
+/// without restarting the app.
+#[tauri::command]
+pub async fn retry_deepseek_keychain(state: State<'_, AppState>) -> Result<SettingsView, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let resolution = secrets::resolve(&state.db, &KeyringStore::new());
+        state.replace_secret_state(resolution);
+        settings_view(&state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -306,9 +345,13 @@ fn monitor_for_logical_point(window: &tauri::WebviewWindow, x: f64, y: f64) -> O
         })
 }
 
+fn secret_error(err: secrets::SecretError) -> AppError {
+    AppError::Secret(secrets::user_message(&err))
+}
+
 fn settings_view(state: &AppState) -> Result<SettingsView, AppError> {
     let settings = state.settings();
-    let key_source = settings::deepseek_key_source(&state.db);
+    let key_source = state.deepseek_key_source();
     let proxy = state.proxy_status();
     let expected_bind = format!("127.0.0.1:{}", settings.proxy_port);
     let restart_required = (proxy.running || proxy.error.is_some())
@@ -316,20 +359,21 @@ fn settings_view(state: &AppState) -> Result<SettingsView, AppError> {
 
     Ok(SettingsView {
         settings,
-        has_deepseek_api_key: key_source.is_some(),
-        deepseek_key_source: key_source.map(str::to_string),
+        has_deepseek_api_key: state.has_deepseek_key(),
+        deepseek_key_source: key_source.map(|source| source.as_str().to_string()),
+        deepseek_key_error: state.deepseek_key_error(),
         restart_required,
     })
 }
 
 fn build_deepseek_status(state: &AppState) -> Result<DeepSeekStatus, AppError> {
-    let key_source = settings::deepseek_key_source(&state.db);
+    let key_source = state.deepseek_key_source();
     let sync = state.db.deepseek_sync_status()?;
     let balances = state.db.latest_balances()?;
 
     Ok(DeepSeekStatus {
-        has_api_key: key_source.is_some(),
-        key_source: key_source.map(str::to_string),
+        has_api_key: state.has_deepseek_key(),
+        key_source: key_source.map(|source| source.as_str().to_string()),
         last_success_at: sync.last_success_at,
         last_error: sync.last_error,
         last_error_at: sync.last_error_at,

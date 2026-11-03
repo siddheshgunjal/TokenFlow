@@ -4,6 +4,7 @@ mod deepseek;
 mod error;
 mod models;
 mod proxy;
+mod secrets;
 mod settings;
 mod state;
 mod tray;
@@ -71,6 +72,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::save_deepseek_api_key,
+            commands::retry_deepseek_keychain,
             commands::get_deepseek_status,
             commands::get_balance_history,
             commands::refresh_deepseek_balance,
