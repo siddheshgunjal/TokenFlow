@@ -53,6 +53,7 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 agent_runs/
+.cargo-home/
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

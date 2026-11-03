@@ -15,6 +15,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
 # Desktop shell
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
@@ -46,6 +49,14 @@ reqwest = { version = "0.12", default-features = false, features = [
 rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
 
+# Secret handling. `Zeroizing` wipes the key from memory on drop.
+zeroize = "1"
+
+# Diagnostics
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 # Linux tray integration. We drive libappindicator directly so we can connect
 # its `activate` signal and set XAyatanaLabel; Tauri's tray wrapper exposes
 # neither on Linux.
@@ -53,8 +64,19 @@ chrono = { version = "0.4", features = ["serde", "clock"] }
 glib = "0.18"
 gtk = "0.18"
 libappindicator-sys = "0.9"
+keyring = { version = "3", default-features = false, features = [
+    "sync-secret-service",
+    "crypto-rust",
+] }
 
-# Diagnostics
-thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# macOS Keychain. Tauri is otherwise platform-neutral here.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = [
+    "apple-native",
+] }
+
+# Windows Credential Manager.
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = [
+    "windows-native",
+] }
