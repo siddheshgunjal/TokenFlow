@@ -45,7 +45,8 @@ export async function saveSettings(settings: Settings): Promise<SettingsView> {
     return {
       settings,
       hasDeepseekApiKey: true,
-      deepseekKeySource: "settings",
+      deepseekKeySource: "keychain",
+      deepseekKeyError: null,
       restartRequired: false,
     };
   }
@@ -60,10 +61,19 @@ export async function saveDeepSeekApiKey(
     return {
       ...mockSettingsView,
       hasDeepseekApiKey: Boolean(apiKey),
-      deepseekKeySource: apiKey ? "settings" : null,
+      deepseekKeySource: apiKey ? "keychain" : null,
+      deepseekKeyError: null,
     };
   }
   return invoke<SettingsView>("save_deepseek_api_key", { apiKey });
+}
+
+export async function retryDeepSeekKeychain(): Promise<SettingsView> {
+  if (!isTauri) {
+    await delay(180);
+    return { ...mockSettingsView, deepseekKeyError: null };
+  }
+  return invoke<SettingsView>("retry_deepseek_keychain");
 }
 
 export async function getDeepSeekStatus(): Promise<DeepSeekStatus> {

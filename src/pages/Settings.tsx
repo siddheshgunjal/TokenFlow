@@ -13,6 +13,8 @@ import {
   getDeepSeekStatus,
   getSettings,
   openExternal,
+  refreshDeepSeekBalance,
+  retryDeepSeekKeychain,
   saveDeepSeekApiKey,
   saveSettings,
 } from "../lib/api";
@@ -100,10 +102,10 @@ export function SettingsPage({ onSaved }: { onSaved: () => void }) {
       setApiKey("");
       setNotice(
         next.deepseekKeySource === "environment"
-          ? "A key is active from DEEPSEEK_API_KEY. The environment value takes precedence over the saved key."
+          ? "A key is active from DEEPSEEK_API_KEY. The environment value takes precedence over the OS keychain."
           : trimmed.length > 0
-            ? "DeepSeek key saved. Refreshing the account balance…"
-            : "DeepSeek key removed.",
+            ? "DeepSeek key saved to the OS keychain. Refreshing the account balance…"
+            : "DeepSeek key removed from the OS keychain.",
       );
       setDeepseek(await getDeepSeekStatus());
       onSaved();
@@ -124,9 +126,34 @@ export function SettingsPage({ onSaved }: { onSaved: () => void }) {
       setView(next);
       setNotice(
         next.hasDeepseekApiKey
-          ? "The saved key was removed, but DEEPSEEK_API_KEY is still active."
-          : "DeepSeek key removed.",
+          ? "The saved key was removed from the OS keychain, but DEEPSEEK_API_KEY is still active."
+          : "DeepSeek key removed from the OS keychain.",
       );
+      setDeepseek(await getDeepSeekStatus());
+      onSaved();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSavingKey(false);
+    }
+  }
+
+  async function handleRetryKeychain() {
+    setSavingKey(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const next = await retryDeepSeekKeychain();
+      setView(next);
+      setNotice(
+        next.deepseekKeyError
+          ? "The OS keychain is still unavailable."
+          : "OS keychain connected.",
+      );
+      if (next.hasDeepseekApiKey) {
+        await refreshDeepSeekBalance();
+      }
       setDeepseek(await getDeepSeekStatus());
       onSaved();
     } catch (err) {
@@ -242,6 +269,21 @@ Model: llama3.2`,
   }'`,
     },
   ];
+
+  const keySourceLabel =
+    view.deepseekKeySource === "environment"
+      ? "DEEPSEEK_API_KEY"
+      : view.deepseekKeySource === "keychain"
+        ? "OS keychain"
+        : view.deepseekKeySource === "legacy"
+          ? "SQLite (insecure)"
+          : null;
+
+  const keyStorageWarning =
+    view.deepseekKeyError ??
+    (view.deepseekKeySource === "legacy"
+      ? "This key is still stored in plaintext in the local SQLite database. TokenFlow will move it to the OS keychain when the keychain becomes available."
+      : null);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -399,12 +441,8 @@ Model: llama3.2`,
               <Icon name="key" className="h-3 w-3" />
               {view.hasDeepseekApiKey ? "Key configured" : "No API key"}
             </span>
-            {view.deepseekKeySource ? (
-              <span className="chip">
-                {view.deepseekKeySource === "environment"
-                  ? "DEEPSEEK_API_KEY"
-                  : "Saved locally"}
-              </span>
+            {keySourceLabel ? (
+              <span className="chip">{keySourceLabel}</span>
             ) : null}
             {deepseek?.lastSuccessAt ? (
               <span className="chip">
@@ -418,6 +456,25 @@ Model: llama3.2`,
               A key from the <code className="font-mono">DEEPSEEK_API_KEY</code>{" "}
               environment variable is active and takes precedence over any key
               saved here.
+            </div>
+          ) : null}
+
+          {keyStorageWarning ? (
+            <div className="mt-3 rounded-xl border border-amber-400/15 bg-amber-400/[0.05] px-3.5 py-2.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="max-w-3xl text-[11px] leading-relaxed text-amber-100/75">
+                  {keyStorageWarning}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleRetryKeychain()}
+                  disabled={savingKey}
+                  className="btn-ghost shrink-0 text-amber-200/80"
+                >
+                  <Icon name="refresh" className="h-3.5 w-3.5" />
+                  Retry keychain
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -463,9 +520,12 @@ Model: llama3.2`,
           </div>
 
           <p className="mt-2 text-[11px] leading-relaxed text-slate-600">
-            Saved keys are stored in the local SQLite database. Set{" "}
+            Saved keys are stored in your operating system&apos;s credential
+            store: macOS Keychain, Windows Credential Manager, or Linux Secret
+            Service. On Linux, a Secret Service provider such as gnome-keyring
+            must be running. Set{" "}
             <code className="font-mono text-slate-500">DEEPSEEK_API_KEY</code>{" "}
-            instead to keep the secret out of disk.
+            instead to keep the key out of persistent storage entirely.
           </p>
 
           {deepseek?.lastError ? (
