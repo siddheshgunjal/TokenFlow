@@ -54,6 +54,14 @@ Thumbs.db
 !.vscode/extensions.json
 agent_runs/
 .cargo-home/
+.tools/
+
+# Packaging outputs
+release/
+release/.tmp/
+flatpak/build/
+flatpak/repo/
+flatpak/.state/
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
