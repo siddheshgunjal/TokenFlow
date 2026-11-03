@@ -125,8 +125,9 @@ persisted. On startup, a legacy plaintext SQLite row is migrated to the
 keychain, verified with a read-back, and scrubbed with `secure_delete`, a WAL
 checkpoint, and `VACUUM`. If the keychain is unavailable, the legacy key keeps
 working, the Settings screen warns, and a retry command re-attempts migration.
-Saving fails closed rather than falling back to SQLite. The Flatpak sandbox
-requirements are documented in `docs/flatpak.md`.
+Saving fails closed rather than falling back to SQLite. The Flatpak build
+ships with the same keychain service and the required `--talk-name` grant; the
+sandbox and test matrix are documented in `docs/flatpak.md`.
 
 ### 10. Tauri 2 needs explicit capabilities
 
@@ -145,11 +146,15 @@ The plan mentions a tray and widget but the code never creates them.
 **Fix:** `tray.rs` now splits the tray by platform. Windows/macOS use a
 native menu with exactly two actions: **Show Widget** and **Quit TokenFlow**.
 Left-clicking the tray icon still toggles the widget, and right-click opens the
-menu. On Linux the tray is an icon-only StatusNotifierItem: there is no label
-and no menu with actions, and the indicator's `Activate` signal opens the widget
-on double-click. This uses libappindicator directly because Tauri's Linux tray
-wrapper does not expose `Activate`. The widget opens anchored to the tray
-activation and contains live input/output/cache numbers, a 14-day input/output
+menu. On Linux the tray is a StatusNotifierItem implemented with `ksni`. It
+exposes `Activate`, `SecondaryActivate`, a DBusMenu with **Open TokenFlow** and
+**Quit TokenFlow**, and an embedded ARGB icon pixmap. Double-click opens the
+widget; single-click opens the menu. Inside Flatpak the service disables its
+well-known D-Bus name and registers under the unique connection name, which is
+the supported sandbox path. The widget stores the `(x, y)` activation hint and
+opens on the monitor that owns the tray icon; it does not use the XWayland
+cursor position, which is stale while the pointer is over a Wayland panel. The
+widget contains live input/output/cache numbers, a 14-day input/output
 graph, DeepSeek balance breakdown, and **Open TokenFlow** / **Quit** actions.
 On Wayland the app runs through XWayland when available so window positioning
 works; `TOKENFLOW_NO_XWAYLAND=1` opts out. `lib.rs` hides the main window on
@@ -210,7 +215,6 @@ producing a rate above 100%.
 
 | Single-click tray activation on GNOME | GNOME's AppIndicator host calls `Activate` on double-click. Single-click activation would require a custom GNOME Shell extension; the Linux tray intentionally uses the stock extension and opens on double-click. |
 | DeepSeek balance overlay on the activity calendar | Balance snapshots mix top-ups, grants, and spend, so a balance-delta calendar can mislead. Balance history is stored, and a future toggle can visualize it once the metric is defined carefully. |
-| Flatpak packaging | Requires runtime/library work (WebKitGTK, libayatana-appindicator, vendored sources) and Flathub metadata; required permissions and the test matrix are documented in `docs/flatpak.md`. |
 | Token estimation for responses without usage | Estimates would undermine trust in the numbers |
 | Proxy auth token | Loopback-only is reasonable for a single-user desktop; revisit for shared machines |
 | Auto-updater / signing | Requires certificates and release infrastructure |
@@ -226,18 +230,25 @@ producing a rate above 100%.
 - `cargo fmt --check` — clean.
 - `cargo clippy --offline --all-targets -- -D warnings` — clean.
 - `cargo test` — cache-rate clamping, migration application, keychain
-  migration/precedence, and SQLite scrubbing tests.
+  migration/precedence, and SQLite scrubbing.
+- Flatpak built from the worktree manifest, installed with
+  `flatpak install --user`, and launched. The `ksni` item registered with the
+  host watcher, exposed `Activate`/`SecondaryActivate`, a non-empty embedded
+  `IconPixmap`, and a `/MenuBar` menu. Repeated
+  `Activate(2500, 12)` calls placed the widget at the same `(2305, 40)` position,
+  confirming the anchor no longer drifts.
+- RPM built and `dnf install --assumeno` resolved with only `token-flow`
+  missing; the package no longer requires a native indicator library.
+- `appstreamcli validate --no-net` passed for both the Flatpak and deb/rpm
+  metainfo files.
 - `npm run typecheck` — passed.
 - `npm run build` — Vite built both `index.html` and `widget.html` entry points
   successfully.
 - Migration `0002_cached_prompt_tokens.sql` applies after v1 and is idempotent
   through the `user_version` migration runner.
 - Configuration JSON and icon generator syntax validated with Python.
-- Icons generated as PNG, ICO, and ICNS; the 128 px asset is used by the tray.
-- Live probe on Fedora GNOME Wayland with test-only `/tmp` data: the icon-only
-  SNI item registered, `XAyatanaLabel` remained empty, and
-  `Activate(1437, 21)` opened the widget at `(1242, 45)` under XWayland — the
-  expected 390 px centered/panel-cleared position.
+- Icons generated as PNG, ICO, and ICNS; the 128 px asset is embedded in the
+  Linux tray pixmap.
 - The two-action native menu and click anchoring on Windows/macOS still need a
   live check on those platforms; their code path was kept minimal.
 
