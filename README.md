@@ -1,6 +1,13 @@
 # TokenFlow
 
+<!-- Brand mark -->
+<img src="src-tauri/icons/512x512.png" width="112" alt="TokenFlow logo" />
+
 Local-first desktop analytics for **Ollama** and **DeepSeek** usage.
+
+**LOCAL | SECURE | OPEN-SOURCE**
+
+[[docs/branding.md]]
 
 TokenFlow runs a loopback Ollama proxy on `127.0.0.1:11435`, forwards requests to
 your existing Ollama server on `127.0.0.1:11434`, and records input, output, and
