@@ -44,16 +44,25 @@ function buildDaily(): DailyUsage[] {
     const total = active
       ? Math.floor((700 + noise(seed + 11) * 16_000) * weekendFactor)
       : 0;
-    const prompt = Math.floor(total * (0.58 + noise(seed + 3) * 0.2));
-    const cached = Math.floor(prompt * (0.18 + noise(seed + 5) * 0.42));
+    const newInput = Math.floor(total * (0.62 + noise(seed + 3) * 0.18));
+    const output = Math.max(0, total - newInput);
+    // Context is a per-request gauge, so the mock stores one peak prompt.
+    const context = active
+      ? newInput + Math.floor(newInput * (1.4 + noise(seed + 5) * 2.6)) + 512
+      : 0;
+    const cached = Math.floor(context * (0.18 + noise(seed + 7) * 0.5));
 
     daily.push({
       date: dateKeyDaysAgo(offset),
-      inputTokens: prompt,
-      outputTokens: total - prompt,
+      newInputTokens: newInput,
+      outputTokens: output,
+      contextTokens: context,
       cachedInputTokens: cached,
-      totalTokens: total,
+      contextProcessedTokens: context,
+      cachedProcessedTokens: cached,
+      totalTokens: newInput + output,
       requests: active ? 1 + Math.floor(noise(seed + 17) * 9) : 0,
+      cacheHitRate: context > 0 ? cached / context : 0,
     });
   }
 
@@ -62,23 +71,25 @@ function buildDaily(): DailyUsage[] {
 
 function buildModels(
   totalTokens: number,
-  inputTokens: number,
+  newInputTokens: number,
   totalRequests: number,
 ): ModelUsage[] {
   const shares = [0.44, 0.28, 0.18, 0.1];
   return MODEL_NAMES.map((model, index) => {
     const total = Math.floor(totalTokens * shares[index]);
-    const input = Math.floor(inputTokens * shares[index]);
-    const output = Math.max(0, total - input);
-    const cached = Math.floor(input * (0.24 + index * 0.07));
+    const newInput = Math.floor(newInputTokens * shares[index]);
+    const output = Math.max(0, total - newInput);
+    const context = Math.floor(newInput * (2.2 + index * 0.6)) + 512;
+    const cached = Math.floor(context * (0.24 + index * 0.07));
     return {
       model,
-      inputTokens: input,
+      newInputTokens: newInput,
       outputTokens: output,
+      contextTokens: context,
       cachedInputTokens: cached,
       totalTokens: total,
       requests: Math.floor(totalRequests * shares[index]),
-      cacheHitRate: input > 0 ? Math.min(1, cached / input) : 0,
+      cacheHitRate: context > 0 ? Math.min(1, cached / context) : 0,
     };
   });
 }
@@ -86,25 +97,39 @@ function buildModels(
 export function mockDashboard(rangeDays = 30): DashboardSummary {
   const daily = buildDaily();
   const range = daily.slice(-Math.min(Math.max(rangeDays, 1), 365));
-  const totalTokens = range.reduce((sum, day) => sum + day.totalTokens, 0);
-  const inputTokens = range.reduce((sum, day) => sum + day.inputTokens, 0);
+  const newInputTokens = range.reduce(
+    (sum, day) => sum + day.newInputTokens,
+    0,
+  );
   const outputTokens = range.reduce((sum, day) => sum + day.outputTokens, 0);
-  const cachedInputTokens = range.reduce(
-    (sum, day) => sum + day.cachedInputTokens,
+  const totalTokens = newInputTokens + outputTokens;
+  const processedContext = range.reduce(
+    (sum, day) => sum + day.contextProcessedTokens,
+    0,
+  );
+  const processedCached = range.reduce(
+    (sum, day) => sum + day.cachedProcessedTokens,
     0,
   );
   const requests = range.reduce((sum, day) => sum + day.requests, 0);
   const today = daily[daily.length - 1] ?? {
     date: todayKey(),
-    inputTokens: 0,
+    newInputTokens: 0,
     outputTokens: 0,
+    contextTokens: 0,
     cachedInputTokens: 0,
+    contextProcessedTokens: 0,
+    cachedProcessedTokens: 0,
     totalTokens: 0,
     requests: 0,
+    cacheHitRate: 0,
   };
-  const cacheHitRate = inputTokens > 0 ? cachedInputTokens / inputTokens : 0;
+  const cacheHitRate =
+    processedContext > 0 ? processedCached / processedContext : 0;
   const todayCacheHitRate =
-    today.inputTokens > 0 ? today.cachedInputTokens / today.inputTokens : 0;
+    today.contextProcessedTokens > 0
+      ? today.cachedProcessedTokens / today.contextProcessedTokens
+      : 0;
 
   let streakDays = 0;
   for (let index = daily.length - 1; index >= 0; index -= 1) {
@@ -136,21 +161,22 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
     generatedAt: Math.floor(Date.now() / 1000),
     rangeDays,
     totals: {
-      inputTokens,
+      newInputTokens,
       outputTokens,
-      cachedInputTokens,
       totalTokens,
       requests,
-      todayInputTokens: today.inputTokens,
+      todayPeakContextTokens: today.contextTokens,
+      latestContextTokens: today.contextTokens,
+      latestCachedInputTokens: today.cachedInputTokens,
+      todayNewInputTokens: today.newInputTokens,
       todayOutputTokens: today.outputTokens,
-      todayCachedInputTokens: today.cachedInputTokens,
       todayTokens: today.totalTokens,
       todayRequests: today.requests,
       cacheHitRate,
       todayCacheHitRate,
     },
     streakDays,
-    models: buildModels(totalTokens, inputTokens, requests),
+    models: buildModels(totalTokens, newInputTokens, requests),
     daily,
     recent,
     latestBalance: {

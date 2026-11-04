@@ -390,7 +390,9 @@ impl StreamInspector {
                         input_tokens,
                         output_tokens,
                         cached_input_tokens,
-                        total_tokens: input_tokens + output_tokens,
+                        // Flow total: the prompt prefix served from cache is not
+                        // added again on every request.
+                        total_tokens: (input_tokens - cached_input_tokens) + output_tokens,
                         timestamp: created_at,
                     });
                 }

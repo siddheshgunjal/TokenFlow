@@ -19,14 +19,6 @@ export function uncachedInputTokens(
   return Math.max(0, inputTokens - cachedInputTokens);
 }
 
-export function inferenceTokens(
-  inputTokens: number,
-  cachedInputTokens: number,
-  outputTokens: number,
-): number {
-  return uncachedInputTokens(inputTokens, cachedInputTokens) + outputTokens;
-}
-
 export function formatDateTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString(undefined, {
     month: "short",
