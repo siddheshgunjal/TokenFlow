@@ -45,9 +45,16 @@ pub async fn save_settings(
     let state = state.inner().clone();
     let settings = settings.normalized();
     let widget_always_on_top = settings.widget_always_on_top;
+    let desired_autostart = settings.launch_at_login;
+
+    settings.validate().map_err(|err| err.to_string())?;
+
+    let stored_autostart = state.settings().launch_at_login;
+    crate::autostart::apply(&app, stored_autostart, desired_autostart)
+        .await
+        .map_err(|err| err.to_string())?;
 
     let view = tokio::task::spawn_blocking(move || {
-        settings.validate()?;
         state.update_settings(settings)?;
         settings_view(&state)
     })
@@ -314,7 +321,11 @@ fn secret_error(err: secrets::SecretError) -> AppError {
 }
 
 fn settings_view(state: &AppState) -> Result<SettingsView, AppError> {
-    let settings = state.settings();
+    let mut settings = state.settings();
+    let (launch_at_login, launch_at_login_error) =
+        crate::autostart::status(&state.app_handle(), settings.launch_at_login);
+    settings.launch_at_login = launch_at_login;
+
     let key_source = state.deepseek_key_source();
     let proxy = state.proxy_status();
     let expected_bind = format!("127.0.0.1:{}", settings.proxy_port);
@@ -327,6 +338,8 @@ fn settings_view(state: &AppState) -> Result<SettingsView, AppError> {
         deepseek_key_source: key_source.map(|source| source.as_str().to_string()),
         deepseek_key_error: state.deepseek_key_error(),
         restart_required,
+        launch_at_login_supported: true,
+        launch_at_login_error,
     })
 }
 

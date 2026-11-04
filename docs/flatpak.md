@@ -162,6 +162,8 @@ Do **not** add:
 - `--filesystem=home`: the app only writes to its own app-data directory.
 - `--filesystem=~/.local/share/io.github.siddheshgunjal.TokenFlow`: only
   considered if a one-time non-Flatpak data import is added later.
+- `--filesystem=xdg-config/autostart`: the Background portal writes the host
+  login entry; the sandbox itself never touches `~/.config/autostart`.
 
 `tray.rs` uses `ksni` directly. Inside Flatpak it calls
 `disable_dbus_name(true)`: the sandbox cannot own the process-derived
@@ -176,6 +178,27 @@ comes from the `(x, y)` hint supplied by the host with `Activate`/`SecondaryActi
 Do not substitute the local pointer position: while the pointer is over a
 Wayland panel, XWayland can report a stale position from the last X11 window,
 which makes repeated opens drift toward the old widget location.
+
+---
+
+## Launch at login
+
+The Flatpak build cannot use the autostart plugin directly: the plugin writes
+`~/.config/autostart` inside the sandbox and records `/app/bin/tokenflow`,
+which does not exist on the host. TokenFlow uses
+`org.freedesktop.portal.Background.RequestBackground` instead:
+
+- `autostart=true` with `commandline=["tokenflow", "--autostart"]`.
+- The portal rewrites the entry to
+  `flatpak run --command=tokenflow io.github.siddheshgunjal.TokenFlow --autostart`
+  and writes it to the host's `~/.config/autostart`.
+- No extra filesystem or `--talk-name` grant is added; the call goes through the
+  standard session-bus portal.
+
+The first toggle may show a desktop permission dialog. The Background portal
+has no query API, so inside Flatpak the Settings toggle reflects TokenFlow's
+saved preference; native builds read the actual OS entry. Disabling the toggle
+sends `autostart=false`, which removes the host entry.
 
 ---
 
@@ -274,6 +297,15 @@ Run these on the host that runs the Flatpak:
 12. Verify external links open through the OpenURI portal.
 13. Verify the non-Flatpak database is not imported automatically, as described
     above.
+14. Toggle **Launch at login** in Settings. On first enable, confirm the desktop
+    permission dialog appears. Verify the host gains
+    `~/.config/autostart/io.github.siddheshgunjal.TokenFlow.desktop` with
+    `Exec=flatpak run --command=tokenflow io.github.siddheshgunjal.TokenFlow --autostart`.
+    Disable the toggle and verify the file is removed. Log out and back in and
+    confirm the app starts (with the dashboard hidden when **Start minimized**
+    is enabled).
+15. Launch the Flatpak twice. Verify the second process exits and the first
+    instance focuses the dashboard instead of racing for port 11435.
 
 ---
 

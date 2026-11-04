@@ -1,11 +1,14 @@
+mod autostart;
 mod commands;
 mod db;
 mod deepseek;
 mod error;
 mod models;
+mod platform;
 mod proxy;
 mod secrets;
 mod settings;
+mod startup;
 mod state;
 mod tray;
 
@@ -26,6 +29,21 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        // The single-instance plugin must be registered before every other
+        // plugin so a second launch exits before any worker or tray starts.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if startup::has_autostart_arg(&argv) {
+                return;
+            }
+
+            focus_dashboard(app);
+        }))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("TokenFlow")
+                .arg(startup::AUTOSTART_ARG)
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -36,6 +54,9 @@ pub fn run() {
             state::spawn_event_forwarder(handle.clone(), state.events.subscribe());
 
             let settings = state.settings();
+            if startup::is_autostart_launch() {
+                tracing::debug!("started by the login item");
+            }
 
             if settings.show_widget_on_start {
                 let _ = commands::toggle_widget_window(&handle, Some(true));
@@ -43,9 +64,11 @@ pub fn run() {
                 let _ = widget.set_always_on_top(settings.widget_always_on_top);
             }
 
-            if settings.start_minimized {
-                if let Some(main) = app.get_webview_window("main") {
-                    let _ = main.hide();
+            // The main window is created hidden so a login launch never flashes
+            // it before setup decides whether to show it.
+            if let Some(main) = app.get_webview_window("main") {
+                if !settings.start_minimized {
+                    let _ = main.show();
                 }
             }
 
@@ -82,8 +105,41 @@ pub fn run() {
             commands::toggle_widget,
             commands::quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running TokenFlow");
+        .build(tauri::generate_context!())
+        .expect("error while building TokenFlow")
+        .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                focus_dashboard(app_handle);
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (app_handle, event);
+            }
+        });
+}
+
+/// Brings the dashboard forward for a second launch or a macOS dock reactivation.
+///
+/// The single-instance listener can run before Tauri has created the windows
+/// from the configuration, so retry briefly instead of dropping the request.
+fn focus_dashboard(app: &tauri::AppHandle) {
+    if commands::show_main_window(app.clone()).is_ok() {
+        return;
+    }
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for _ in 0..40 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if commands::show_main_window(app.clone()).is_ok() {
+                return;
+            }
+        }
+
+        tracing::warn!("could not focus the dashboard");
+    });
 }
 
 /// GNOME (and other Wayland compositors) do not let a client position a regular

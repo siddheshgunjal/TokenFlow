@@ -82,6 +82,7 @@ export interface Settings {
   closeToTray: boolean;
   widgetAlwaysOnTop: boolean;
   showWidgetOnStart: boolean;
+  launchAtLogin: boolean;
 }
 
 export type DeepSeekKeySource = "environment" | "keychain" | "legacy";
@@ -92,6 +93,8 @@ export interface SettingsView {
   deepseekKeySource: DeepSeekKeySource | null;
   deepseekKeyError: string | null;
   restartRequired: boolean;
+  launchAtLoginSupported: boolean;
+  launchAtLoginError: string | null;
 }
 
 export interface DeepSeekStatus {

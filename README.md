@@ -254,7 +254,8 @@ grant `--talk-name=org.freedesktop.secrets`; see
 | Proxy port | `11435` | Loopback only, 1024–65535 |
 | DeepSeek base URL | `https://api.deepseek.com` | HTTPS required except loopback |
 | DeepSeek poll interval | `900` seconds | Clamped to 60–86400 |
-| Start minimized | `false` | Launch into the tray |
+| Start minimized | `false` | Launch into the tray, including at login |
+| Launch at login | `false` | Starts at sign-in; login visibility follows Start minimized |
 | Close to tray | `true` | Dashboard hides instead of exiting |
 | Widget always on top | `true` | Applies immediately |
 | Show widget on launch | `false` | Opens the panel; anchors near the tray when available, otherwise top-right |
@@ -273,6 +274,13 @@ RUST_LOG=tokenflow=info,tower_http=warn
 Saved settings take precedence over environment defaults after the first save
 (except for the DeepSeek key). Proxy port and upstream URL changes require an app
 restart; the Settings screen shows a banner when a restart is needed.
+
+**Launch at login** writes a per-user login item: a LaunchAgent on macOS, an
+`HKCU\...\Run` value on Windows, or an XDG autostart entry on Linux and
+AppImage. The Flatpak build uses `org.freedesktop.portal.Background`, so it
+needs no extra sandbox permission; the first toggle may show a desktop
+permission prompt. Login launches follow **Start minimized**. A second launch
+exits and focuses the running dashboard instead of starting a second proxy.
 
 Inside a Flatpak, host environment variables are not inherited. Use
 `flatpak run --env=DEEPSEEK_API_KEY=... io.github.siddheshgunjal.TokenFlow`. See
@@ -361,6 +369,7 @@ TokenFlow/
 │   ├── migrations/0001_init.sql
 │   ├── migrations/0002_cached_prompt_tokens.sql
 │   ├── src/
+│   │   ├── autostart.rs         # Native login item + Flatpak background portal
 │   │   ├── commands.rs          # Tauri IPC commands
 │   │   ├── db.rs                # SQLite + queries + migrations
 │   │   ├── deepseek.rs          # Balance poller
@@ -368,9 +377,11 @@ TokenFlow/
 │   │   ├── lib.rs               # Tauri setup + window lifecycle
 │   │   ├── main.rs
 │   │   ├── models.rs            # IPC/event DTOs
+│   │   ├── platform.rs          # Flatpak detection
 │   │   ├── proxy.rs             # Axum proxy + stream inspector
 │   │   ├── secrets.rs           # OS keychain + legacy-key migration
 │   │   ├── settings.rs          # Validation + settings DTOs
+│   │   ├── startup.rs           # --autostart launch detection
 │   │   ├── state.rs             # Shared state + event bridge
 │   │   └── tray.rs              # Platform tray, live metrics, window anchor
 │   ├── Cargo.toml
@@ -396,6 +407,9 @@ TokenFlow/
 | Crate / package | Role |
 | --- | --- |
 | `tauri` 2 | Desktop runtime, windows, tray, IPC |
+| `tauri-plugin-single-instance` 2 | One running instance; a second launch focuses the dashboard |
+| `tauri-plugin-autostart` 2 | macOS LaunchAgent, Windows Run value, or XDG autostart entry |
+| `ashpd` 0.12 (Linux) | Flatpak Background portal for launch at login |
 | `ksni` (Linux) | StatusNotifierItem with `Activate`, embedded icon, and a small menu |
 | `axum` 0.7 | Ollama proxy server |
 | `tower-http` 0.5 | Loopback-restricted CORS |
@@ -416,7 +430,6 @@ TokenFlow/
 - Code signing, macOS notarization, and auto-updater.
 - Flathub submission when a Flathub account is available; the manifest and
   metadata are already prepared in [`docs/flathub.md`](docs/flathub.md).
-- Launch-at-login and single-instance handling.
 - CSV/JSON export and configurable retention.
 - A proxy auth token for shared machines (loopback alone is not an auth boundary).
 - Integration tests that replay recorded NDJSON/SSE fixtures.

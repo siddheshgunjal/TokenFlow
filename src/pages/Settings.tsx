@@ -586,13 +586,31 @@ Model: llama3.2`,
 
         <Section
           title="Desktop behavior"
-          description="Tray and widget preferences. Window changes apply immediately where possible."
+          description="Tray, widget, and startup preferences. Changes apply when you save."
           icon="monitor"
         >
           <div className="divide-y divide-white/[0.05]">
+            <div>
+              <Toggle
+                label="Launch at login"
+                description={
+                  view.launchAtLoginSupported
+                    ? "Start TokenFlow automatically when you sign in."
+                    : "This build cannot manage a login item."
+                }
+                checked={form.launchAtLogin}
+                onChange={(value) => patch("launchAtLogin", value)}
+                disabled={!view.launchAtLoginSupported}
+              />
+              {view.launchAtLoginError ? (
+                <p className="-mt-2 pb-3 text-[11px] leading-relaxed text-rose-300/80">
+                  {view.launchAtLoginError}
+                </p>
+              ) : null}
+            </div>
             <Toggle
               label="Start minimized"
-              description="Launch into the system tray without opening the dashboard."
+              description="Launch into the system tray without opening the dashboard, including at login."
               checked={form.startMinimized}
               onChange={(value) => patch("startMinimized", value)}
             />
@@ -620,7 +638,7 @@ Model: llama3.2`,
         <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="text-[11px] leading-relaxed text-slate-500">
             Proxy port and upstream changes require an app restart. Other
-            preferences are saved immediately.
+            preferences are applied when you save.
           </p>
           <button type="submit" disabled={saving} className="btn-primary">
             <Icon name="check" className="h-3.5 w-3.5" />
@@ -695,14 +713,20 @@ function Toggle({
   description,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   description: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-6 py-3.5">
+    <div
+      className={`flex items-start justify-between gap-6 py-3.5 ${
+        disabled ? "opacity-60" : ""
+      }`}
+    >
       <div>
         <p className="text-sm text-slate-300">{label}</p>
         <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
@@ -713,8 +737,11 @@ function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${
+          disabled ? "cursor-not-allowed" : ""
+        } ${
           checked
             ? "border-teal-300/40 bg-teal-400/80"
             : "border-white/10 bg-white/[0.06]"

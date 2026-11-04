@@ -25,6 +25,7 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub widget_always_on_top: bool,
     pub show_widget_on_start: bool,
+    pub launch_at_login: bool,
 }
 
 impl Default for Settings {
@@ -46,6 +47,7 @@ impl Default for Settings {
             close_to_tray: true,
             widget_always_on_top: true,
             show_widget_on_start: false,
+            launch_at_login: false,
         }
     }
 }
@@ -139,8 +141,47 @@ pub struct SettingsView {
     /// A keychain or migration problem that the Settings screen should show.
     pub deepseek_key_error: Option<String>,
     pub restart_required: bool,
+    /// Whether this build can manage an OS login item.
+    pub launch_at_login_supported: bool,
+    /// A portal or platform error the Settings screen should show next to the
+    /// launch-at-login toggle.
+    pub launch_at_login_error: Option<String>,
 }
 
 fn is_loopback(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+
+    #[test]
+    fn old_settings_blob_without_launch_at_login_defaults_to_false() {
+        let raw = r#"{
+            "upstreamUrl": "http://127.0.0.1:11434",
+            "proxyPort": 11435,
+            "deepseekPollIntervalSecs": 900,
+            "deepseekBaseUrl": "https://api.deepseek.com",
+            "startMinimized": true,
+            "closeToTray": false,
+            "widgetAlwaysOnTop": false,
+            "showWidgetOnStart": true
+        }"#;
+
+        let settings: Settings = serde_json::from_str(raw).expect("old settings blob deserializes");
+        assert!(!settings.launch_at_login);
+        assert!(settings.start_minimized);
+    }
+
+    #[test]
+    fn launch_at_login_serializes_as_camel_case() {
+        let settings = Settings {
+            launch_at_login: true,
+            ..Settings::default()
+        };
+
+        let raw = serde_json::to_string(&settings).expect("settings serialize");
+        assert!(raw.contains("\"launchAtLogin\":true"));
+    }
 }

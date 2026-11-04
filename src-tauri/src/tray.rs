@@ -178,8 +178,7 @@ mod linux {
     }
 
     pub(super) fn create(app: &AppHandle) -> tauri::Result<TrayMenu> {
-        let flatpak = std::env::var_os("FLATPAK_ID").is_some()
-            || std::path::Path::new("/.flatpak-info").exists();
+        let flatpak = crate::platform::is_flatpak();
 
         let service = TokenFlowTray {
             app: app.clone(),
