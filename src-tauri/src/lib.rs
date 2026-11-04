@@ -64,9 +64,11 @@ pub fn run() {
                 let _ = widget.set_always_on_top(settings.widget_always_on_top);
             }
 
-            if settings.start_minimized {
-                if let Some(main) = app.get_webview_window("main") {
-                    let _ = main.hide();
+            // The main window is created hidden so a login launch never flashes
+            // it before setup decides whether to show it.
+            if let Some(main) = app.get_webview_window("main") {
+                if !settings.start_minimized {
+                    let _ = main.show();
                 }
             }
 
