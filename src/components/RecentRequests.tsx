@@ -41,9 +41,7 @@ export function RecentRequests({ logs }: { logs: OllamaLog[] }) {
                 <th className="hidden px-3 py-2.5 font-medium sm:table-cell">
                   Endpoint
                 </th>
-                <th className="px-3 py-2.5 text-right font-medium">
-                  New input
-                </th>
+                <th className="px-3 py-2.5 text-right font-medium">Input</th>
                 <th className="px-3 py-2.5 text-right font-medium">Output</th>
                 <th className="hidden px-3 py-2.5 text-right font-medium md:table-cell">
                   Cache
