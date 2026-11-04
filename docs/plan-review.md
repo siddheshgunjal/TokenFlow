@@ -218,7 +218,7 @@ producing a rate above 100%.
 | Token estimation for responses without usage | Estimates would undermine trust in the numbers |
 | Proxy auth token | Loopback-only is reasonable for a single-user desktop; revisit for shared machines |
 | Auto-updater / signing | Requires certificates and release infrastructure |
-| Launch-at-login / single instance | Platform-specific plugin work; not required for the core loop |
+| Launch-at-login / single instance | Implemented after this review with the official Tauri plugins; the Flatpak build uses the Background portal. See README and `docs/flatpak.md`. |
 | Retention/export | Data model supports it, UI does not yet |
 | Integration tests with recorded streams | Best next test investment; unit-style fixtures would catch parser regressions |
 | Cost estimation | Requires a model-price table and a clear disclaimer |
@@ -265,7 +265,8 @@ producing a rate above 100%.
    and Wayland.
 4. Verify OS keychain save/read/delete on macOS, Windows, GNOME, and KDE; only
    the Linux path is exercised locally.
-5. Add a single-instance guard so two app launches do not race for port 11435.
+5. Single-instance guard: implemented with `tauri-plugin-single-instance`; a
+   second launch focuses the running dashboard instead of racing for port 11435.
 6. Verify transparent panel behavior on Linux desktops with and without a
    compositor.
 7. Add an export/backup path before recommending the app for long-term use.
