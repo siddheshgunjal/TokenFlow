@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { classNames } from "../lib/format";
 import { refreshDeepSeekBalance } from "../lib/api";
 import { formatMoney, formatRelative } from "../lib/format";
 import type { BalanceSnapshot } from "../lib/types";
@@ -40,21 +41,22 @@ export function DeepSeekCard({
     <section className="card flex h-full min-w-0 flex-col p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/20">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-strong/10 text-accent-strong ring-1 ring-accent-strong/20">
             <Icon name="wallet" />
           </span>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-200">DeepSeek</h2>
-            <p className="text-[11px] text-slate-500">Available balance</p>
+            <h2 className="text-base font-semibold text-ink">DeepSeek</h2>
+            <p className="text-[12px] text-muted">Available balance</p>
           </div>
         </div>
         <span className="chip shrink-0">
           <span
-            className={`h-1.5 w-1.5 rounded-full ${
+            className={classNames(
+              "h-1.5 w-1.5 rounded-full",
               balance?.isAvailable
-                ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
-                : "bg-slate-600"
-            }`}
+                ? "bg-success shadow-[0_0_8px_rgba(34,197,95,0.7)]"
+                : "bg-muted",
+            )}
           />
           {balance?.isAvailable ? "Live" : balance ? "Offline" : "Not linked"}
         </span>
@@ -66,7 +68,7 @@ export function DeepSeekCard({
             <p className="break-words text-[30px] font-semibold leading-none tracking-tight text-white tabular-nums">
               {formatMoney(balance.totalBalance, balance.currency)}
             </p>
-            <p className="mt-2 text-[11px] leading-4 text-slate-500">
+            <p className="mt-2 text-[12px] leading-4 text-muted">
               Total available · {balance.currency} · synced{" "}
               {formatRelative(balance.createdAt)}
             </p>
@@ -74,16 +76,16 @@ export function DeepSeekCard({
 
           <div className="mt-4 space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-500">Granted</span>
-              <span className="text-slate-300 tabular-nums">
+              <span className="text-muted">Granted</span>
+              <span className="text-ink tabular-nums">
                 {balance.grantedBalance
                   ? formatMoney(balance.grantedBalance, balance.currency)
                   : "—"}
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-500">Topped up</span>
-              <span className="text-slate-300 tabular-nums">
+              <span className="text-muted">Topped up</span>
+              <span className="text-ink tabular-nums">
                 {balance.toppedUpBalance
                   ? formatMoney(balance.toppedUpBalance, balance.currency)
                   : "—"}
@@ -100,9 +102,9 @@ export function DeepSeekCard({
           </div>
         </>
       ) : (
-        <div className="mt-6 rounded-xl border border-dashed border-white/10 bg-white/[0.015] p-4">
+        <div className="mt-6 rounded-xl border-dashed border-white/10 bg-white/[0.015] p-4">
           <div className="flex items-center gap-2 text-slate-300">
-            <Icon name="key" className="h-4 w-4 text-violet-300" />
+            <Icon name="key" className="h-4 w-4 text-slate-300" />
             <p className="text-sm font-medium">Connect DeepSeek</p>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
@@ -113,7 +115,7 @@ export function DeepSeekCard({
       )}
 
       {error ? (
-        <p className="mt-3 break-words text-[11px] leading-relaxed text-rose-300">
+        <p className="mt-3 break-words text-[12px] leading-relaxed text-danger">
           {needsKey ? "DeepSeek needs an API key. Add one in Settings." : error}
         </p>
       ) : null}

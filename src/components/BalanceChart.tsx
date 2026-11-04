@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { getBalanceHistory } from "../lib/api";
 import { formatMoney } from "../lib/format";
@@ -42,6 +42,17 @@ function shortDate(date: Date): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatPointTime(at: number, range: ChartRange): string {
+  const date = new Date(at * 1000);
+  if (range === "day") {
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  return shortDate(date);
 }
 
 function rangeFor(range: ChartRange, monthOffset: number): RangeBounds {
@@ -140,11 +151,16 @@ export function BalanceChart({
   monthOffset: number;
   refreshKey: number;
 }) {
-  const [range, setRange] = useState<ChartRange>("week");
+  const [range, setRange] = useState<ChartRange>("day");
   const [snapshots, setSnapshots] = useState<BalanceSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [hover, setHover] = useState<{ xPct: number; yPct: number } | null>(
+    null,
+  );
+  const [hoverPoint, setHoverPoint] = useState<SeriesPoint | null>(null);
+  const plotRef = useRef<HTMLDivElement>(null);
   const calendarDay = new Date().toDateString();
 
   const bounds = useMemo(
@@ -199,8 +215,10 @@ export function BalanceChart({
 
     const toX = (at: number) =>
       Math.min(100, Math.max(0, ((at - since) / span) * 100));
+    // Keep 12 units of headroom at the top so the line and current-point
+    // dot never spill into the label row above the chart.
     const toY = (value: number) =>
-      Math.min(100, Math.max(0, 100 - ((value - low) / (high - low)) * 100));
+      Math.min(100, Math.max(12, 12 + (1 - (value - low) / (high - low)) * 88));
 
     const commands = series.map(
       (point, index) =>
@@ -217,32 +235,53 @@ export function BalanceChart({
       ).toFixed(2)},100 Z`,
       dotX: toX(last.at),
       dotY: toY(last.value),
+      points: series.map((point) => ({
+        x: toX(point.at),
+        y: toY(point.value),
+      })),
       low: minValue,
       high: maxValue,
     };
   }, [series, since, until]);
+
+  const handleChartHover = (event: MouseEvent<HTMLDivElement>) => {
+    if (!chart || series.length === 0) return;
+    const rect = plotRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    let nearest = chart.points[0];
+    for (const point of chart.points) {
+      if (Math.abs(point.x - x) < Math.abs(nearest.x - x)) nearest = point;
+    }
+    const index = chart.points.indexOf(nearest);
+    setHover({ xPct: nearest.x, yPct: nearest.y });
+    setHoverPoint(series[index]);
+  };
+
+  const handleChartLeave = () => {
+    setHover(null);
+    setHoverPoint(null);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="label">Balance trend</p>
-          <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
-            {bounds.label}
-          </p>
+          <p className="text-sm text-muted">{bounds.label}</p>
         </div>
         <div className="relative shrink-0">
           <select
             value={range}
             onChange={(event) => setRange(event.target.value as ChartRange)}
             aria-label="Balance chart range"
-            className="appearance-none rounded-md border border-white/10 bg-[#0b1220] py-1 pl-2.5 pr-7 text-[10px] font-medium text-slate-300 outline-none transition-colors hover:bg-white/[0.05] focus:border-violet-400/50"
+            className="appearance-none rounded-md border border-white/10 bg-[#0b1220] py-1 pl-2.5 pr-7 text-[12px] font-medium text-muted outline-none transition-colors hover:bg-white/[0.05] focus:border-accent/50"
           >
             {RANGE_OPTIONS.map((option) => (
               <option
                 key={option.id}
                 value={option.id}
-                className="bg-[#0b1220] text-slate-200"
+                className="bg-[#0b1220] text-muted"
               >
                 {option.label}
               </option>
@@ -250,7 +289,7 @@ export function BalanceChart({
           </select>
           <Icon
             name="chevron-right"
-            className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-slate-500"
+            className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-muted"
           />
         </div>
       </div>
@@ -258,35 +297,40 @@ export function BalanceChart({
       {loading ? (
         <div className="mt-3 min-h-[120px] flex-1 animate-pulse rounded-xl border border-white/[0.04] bg-white/[0.025]" />
       ) : error ? (
-        <div className="mt-3 flex min-h-[120px] flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-rose-400/20 bg-rose-500/[0.03] px-4 py-5 text-center">
-          <Icon name="alert" className="h-4 w-4 text-rose-300/80" />
-          <p className="mt-2 text-xs text-rose-200/80">
+        <div className="mt-3 flex min-h-[120px] flex-1 flex-col items-center justify-center rounded-xl border border-danger/20 bg-danger/10 px-4 py-5 text-center">
+          <Icon name="alert" className="h-4 w-4 text-danger/80" />
+          <p className="mt-2 text-xs text-danger/80">
             Could not load balance history
           </p>
           <button
             type="button"
             onClick={() => setAttempt((value) => value + 1)}
-            className="mt-2 text-[10px] text-rose-300 underline-offset-2 hover:underline"
+            className="mt-2 text-xs text-danger underline-offset-2 hover:underline"
           >
             Try again
           </button>
         </div>
       ) : !chart ? (
-        <div className="mt-3 flex min-h-[120px] flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-4 py-5 text-center">
-          <Icon name="activity" className="h-4 w-4 text-violet-300/70" />
-          <p className="mt-2 text-xs text-slate-400">No balance samples yet</p>
-          <p className="mt-1 text-[10px] leading-relaxed text-slate-600">
+        <div className="mt-3 flex min-h-[120px] flex-1 flex-col items-center justify-center rounded-xl border border-white/[0.015] px-4 py-5 text-center">
+          <Icon name="activity" className="h-4 w-4 text-muted/70" />
+          <p className="mt-2 text-xs text-muted">No balance samples yet</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-muted">
             TokenFlow records a balance point every time it polls DeepSeek.
           </p>
         </div>
       ) : (
         <>
-          <div className="mt-2 flex items-center justify-between text-[9px] text-slate-600">
+          <div className="mt-2 flex items-center justify-between text-[12px] text-muted">
             <span>Low {formatMoney(chart.low.toFixed(2), currency)}</span>
             <span>High {formatMoney(chart.high.toFixed(2), currency)}</span>
           </div>
 
-          <div className="relative mt-1.5 min-h-[120px] flex-1">
+          <div
+            ref={plotRef}
+            className="relative mt-1.5 min-h-[120px] flex-1 cursor-crosshair"
+            onMouseMove={handleChartHover}
+            onMouseLeave={handleChartLeave}
+          >
             <svg
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
@@ -302,8 +346,8 @@ export function BalanceChart({
                   x2="0"
                   y2="1"
                 >
-                  <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.38" />
-                  <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
+                  <stop offset="0%" stopColor="#2F6BFF" stopOpacity="0.32" />
+                  <stop offset="100%" stopColor="#2F6BFF" stopOpacity="0" />
                 </linearGradient>
               </defs>
 
@@ -324,24 +368,67 @@ export function BalanceChart({
               <path
                 d={chart.line}
                 fill="none"
-                stroke="#c4b5fd"
+                stroke="currentColor"
                 strokeWidth="1.7"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
               />
+
+              {hover ? (
+                <line
+                  x1={hover.xPct}
+                  x2={hover.xPct}
+                  y1="12"
+                  y2="100"
+                  stroke="rgba(255,255,255,0.25)"
+                  strokeWidth="1"
+                  strokeDasharray="4 3"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
             </svg>
 
             <span
-              className="pointer-events-none absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-200 shadow-[0_0_7px_rgba(196,181,253,0.9)]"
+              className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-canvas shadow-[0_0_8px_rgba(0,212,192,0.7)]"
               style={{ left: `${chart.dotX}%`, top: `${chart.dotY}%` }}
             />
+
+            {hover && hoverPoint ? (
+              <span
+                className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-1 ring-white/50"
+                style={{ left: `${hover.xPct}%`, top: `${hover.yPct}%` }}
+              />
+            ) : null}
+
+            {hover && hoverPoint ? (
+              <div
+                className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-white/10 bg-[#0b1220]/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm"
+                style={{
+                  left: `${Math.max(12, Math.min(hover.xPct, 88))}%`,
+                  top: `${hover.yPct}%`,
+                  marginTop: "-8px",
+                }}
+              >
+                <p className="whitespace-nowrap text-[11px] font-semibold text-white tabular-nums">
+                  {formatMoney(hoverPoint.value.toFixed(2), currency)}
+                </p>
+                <p className="whitespace-nowrap text-[10px] text-muted">
+                  {formatPointTime(hoverPoint.at, range)}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="mt-1.5 flex items-center justify-between text-[12px] text-muted">
+              {bounds.axis.map((label) => (
+                <span key={label}>{label}</span>
+              ))}
+            </div>
           </div>
 
-          <div className="mt-1.5 flex items-center justify-between text-[9px] text-slate-600">
-            {bounds.axis.map((label) => (
-              <span key={label}>{label}</span>
-            ))}
+          <div className="mt-1 flex items-center justify-between text-[12px] text-muted">
+            <span>Low {formatMoney(chart.low.toFixed(2), currency)}</span>
+            <span>High {formatMoney(chart.high.toFixed(2), currency)}</span>
           </div>
         </>
       )}

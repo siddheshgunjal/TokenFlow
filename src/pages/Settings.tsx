@@ -288,32 +288,25 @@ Model: llama3.2`,
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       {notice ? (
-        <div className="flex items-start gap-3 rounded-xl border border-teal-400/20 bg-teal-400/[0.06] px-4 py-3">
-          <Icon
-            name="check"
-            className="mt-0.5 h-4 w-4 shrink-0 text-teal-300"
-          />
-          <p className="text-xs leading-relaxed text-teal-100/80">{notice}</p>
+        <div className="flex items-start gap-3 rounded-xl border border-success/20 bg-success/10 text-success/80 px-4 py-3">
+          {notice}
         </div>
       ) : null}
 
       {error ? (
-        <div className="flex items-start gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3">
-          <Icon
-            name="alert"
-            className="mt-0.5 h-4 w-4 shrink-0 text-rose-300"
-          />
-          <p className="text-xs leading-relaxed text-rose-200/80">{error}</p>
+        <div className="flex items-start gap-3 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3">
+          <Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+          <p className="text-xs leading-relaxed text-danger">{error}</p>
         </div>
       ) : null}
 
       {view.restartRequired ? (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3">
+        <div className="flex items-start gap-3 rounded-xl border border-warning/20 bg-warning/10 px-4 py-3">
           <Icon
             name="refresh"
-            className="mt-0.5 h-4 w-4 shrink-0 text-amber-300"
+            className="mt-0.5 h-4 w-4 shrink-0 text-warning"
           />
-          <p className="text-xs leading-relaxed text-amber-100/75">
+          <p className="text-xs leading-relaxed text-warning">
             The running proxy does not match these settings. Restart TokenFlow
             to apply proxy port or upstream URL changes.
           </p>
@@ -358,13 +351,13 @@ Model: llama3.2`,
             </label>
           </div>
 
-          <div className="mt-4 rounded-xl border border-teal-400/15 bg-teal-400/[0.045] p-3.5">
+          <div className="mb-4 rounded-xl border border-success/20 bg-success/10 text-success/80 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-xs font-medium text-teal-100">
+                <p className="text-xs font-medium text-muted">
                   Point your client here
                 </p>
-                <p className="mt-0.5 text-[11px] text-teal-200/50">
+                <p className="mt-0.5 text-[12px] text-muted">
                   Use this as the Ollama base URL. No Ollama server changes are
                   required.
                 </p>
@@ -372,7 +365,7 @@ Model: llama3.2`,
               <button
                 type="button"
                 onClick={() => void handleCopy("base-url", baseUrl)}
-                className="btn-secondary border-teal-400/20 bg-teal-400/[0.06] text-teal-200 hover:bg-teal-400/10"
+                className="btn-secondary border-muted/20 bg-muted/10 text-muted hover:bg-muted/10"
               >
                 <Icon
                   name={copied === "base-url" ? "check" : "copy"}
@@ -381,7 +374,7 @@ Model: llama3.2`,
                 {copied === "base-url" ? "Copied" : "Copy URL"}
               </button>
             </div>
-            <code className="mt-2 block truncate rounded-lg bg-black/25 px-2.5 py-1.5 font-mono text-xs text-teal-200">
+            <code className="mt-2 block truncate rounded-lg bg-black/25 px-2.5 py-1.5 font-mono text-xs text-muted">
               {baseUrl}
             </code>
           </div>
@@ -452,7 +445,7 @@ Model: llama3.2`,
           </div>
 
           {view.deepseekKeySource === "environment" ? (
-            <div className="mt-3 rounded-xl border border-amber-400/15 bg-amber-400/[0.05] px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-100/70">
+            <div className="mt-3 rounded-xl border border-warning/15 bg-warning/5 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted">
               A key from the <code className="font-mono">DEEPSEEK_API_KEY</code>{" "}
               environment variable is active and takes precedence over any key
               saved here.
@@ -460,16 +453,16 @@ Model: llama3.2`,
           ) : null}
 
           {keyStorageWarning ? (
-            <div className="mt-3 rounded-xl border border-amber-400/15 bg-amber-400/[0.05] px-3.5 py-2.5">
+            <div className="mt-3 rounded-xl border border-warning/15 bg-warning/5 px-3.5 py-2.5">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="max-w-3xl text-[11px] leading-relaxed text-amber-100/75">
+                <p className="max-w-3xl text-[12px] leading-relaxed text-warning">
                   {keyStorageWarning}
                 </p>
                 <button
                   type="button"
                   onClick={() => void handleRetryKeychain()}
                   disabled={savingKey}
-                  className="btn-ghost shrink-0 text-amber-200/80"
+                  className="btn-ghost shrink-0 text-muted"
                 >
                   <Icon name="refresh" className="h-3.5 w-3.5" />
                   Retry keychain
@@ -529,8 +522,8 @@ Model: llama3.2`,
           </p>
 
           {deepseek?.lastError ? (
-            <div className="mt-3 rounded-xl border border-rose-500/15 bg-rose-500/[0.05] px-3.5 py-2.5">
-              <p className="text-[11px] leading-relaxed text-rose-200/75">
+            <div className="mb-4 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3">
+              <p className="text-[12px] leading-relaxed text-warning">
                 Last error: {deepseek.lastError}
               </p>
             </div>
@@ -577,7 +570,7 @@ Model: llama3.2`,
                 (err) => setError(String(err)),
               );
             }}
-            className="mt-4 inline-flex items-center gap-1.5 text-xs text-violet-300 transition-colors hover:text-violet-200"
+            className="mt-4 inline-flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-muted"
           >
             Open DeepSeek API keys
             <Icon name="external" className="h-3 w-3" />
@@ -603,7 +596,7 @@ Model: llama3.2`,
                 disabled={!view.launchAtLoginSupported}
               />
               {view.launchAtLoginError ? (
-                <p className="-mt-2 pb-3 text-[11px] leading-relaxed text-rose-300/80">
+                <p className="-mt-2 pb-3 text-[12px] leading-relaxed text-danger/80">
                   {view.launchAtLoginError}
                 </p>
               ) : null}
@@ -647,9 +640,9 @@ Model: llama3.2`,
         </div>
       </form>
 
-      <section className="card border-rose-500/15 p-5">
+      <section className="card border-danger/15 p-5">
         <div className="flex items-start gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/15">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger ring-1 ring-danger/20">
             <Icon name="trash" />
           </span>
           <div className="min-w-0 flex-1">
@@ -739,17 +732,17 @@ function Toggle({
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${
+        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors duration-200 ${
           disabled ? "cursor-not-allowed" : ""
         } ${
           checked
-            ? "border-teal-300/40 bg-teal-400/80"
-            : "border-white/10 bg-white/[0.06]"
+            ? "border-accent/50 bg-accent"
+            : "border-white/10 bg-white/[0.06] hover:bg-white/[0.10]"
         }`}
       >
         <span
-          className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
-            checked ? "left-[3px] translate-x-[20px]" : "left-[3px]"
+          className={`absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+            checked ? "translate-x-[20px]" : "translate-x-0"
           }`}
         />
       </button>

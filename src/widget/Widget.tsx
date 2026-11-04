@@ -18,6 +18,7 @@ import {
   formatPercent,
   formatRelative,
   uncachedInputTokens,
+  classNames,
 } from "../lib/format";
 import type { DashboardSummary } from "../lib/types";
 
@@ -166,19 +167,20 @@ export function Widget() {
             <div className="min-w-0" data-tauri-drag-region>
               <p
                 data-tauri-drag-region
-                className="text-[11px] font-semibold tracking-tight text-white"
+                className="text-xs font-semibold tracking-tight text-white"
               >
                 TokenFlow
               </p>
               <p
                 data-tauri-drag-region
-                className="flex items-center gap-1 text-[9px] text-slate-500"
+                className="flex items-center gap-1 text-[12px]"
               >
                 <span
                   data-tauri-drag-region
-                  className={`h-1 w-1 rounded-full ${
-                    data?.proxy.running ? "bg-emerald-400" : "bg-rose-400"
-                  }`}
+                  className={classNames(
+                    "h-1.5 w-1.5 rounded-full",
+                    data?.proxy.running ? "bg-success" : "bg-danger",
+                  )}
                 />
                 {data?.proxy.running ? "Proxy live" : "Proxy offline"}
               </p>
@@ -192,7 +194,7 @@ export function Widget() {
               disabled={refreshing}
               aria-label="Refresh widget data"
               title="Refresh usage and balance"
-              className="grid h-6 w-6 place-items-center rounded-md text-slate-500 transition-colors hover:bg-teal-400/[0.08] hover:text-teal-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-6 w-6 place-items-center rounded-md text-muted transition-colors hover:bg-accent/80 hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Icon
                 name="refresh"
@@ -205,7 +207,7 @@ export function Widget() {
                 void toggleWidget(false).catch((err) => setError(String(err)));
               }}
               aria-label="Hide widget"
-              className="grid h-6 w-6 place-items-center rounded-md text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
+              className="grid h-6 w-6 place-items-center rounded-md text-muted transition-colors hover:bg-white/[0.06] hover:text-muted"
             >
               <Icon name="x" className="h-3.5 w-3.5" />
             </button>
@@ -225,14 +227,14 @@ export function Widget() {
             </div>
           ) : error && !data ? (
             <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <Icon name="alert" className="h-5 w-5 text-rose-300" />
-              <p className="mt-2 text-[11px] text-slate-300">
+              <Icon name="alert" className="h-5 w-5 text-danger" />
+              <p className="mt-2 text-[12px] text-muted">
                 Could not load usage
               </p>
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="mt-2 text-[10px] text-teal-300 hover:text-teal-200"
+                className="mt-2 text-[12px] text-accent hover:text-white"
               >
                 Try again
               </button>
@@ -240,22 +242,22 @@ export function Widget() {
           ) : data ? (
             <>
               <div className="flex items-center justify-between">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
                   Today
                 </p>
-                <span className="text-[9px] text-slate-600">
+                <span className="text-xs text-muted">
                   {formatNumber(data.totals.todayRequests)} requests
                 </span>
               </div>
 
               <div className="mt-1 grid grid-cols-2 gap-3">
                 <div>
-                  <div className="flex items-center gap-1 text-[9px] text-teal-300/80">
+                  <div className="flex items-center gap-1 text-[12px] text-muted/80">
                     <Icon name="arrow-down-left" className="h-3 w-3" />
                     New input
                   </div>
                   <p
-                    className="mt-0.5 text-[23px] font-semibold leading-none tracking-tight text-white tabular-nums"
+                    className="mt-0.5 text-[20px] font-semibold leading-none tracking-tight text-white tabular-nums"
                     title="Uncached input tokens evaluated by the model"
                   >
                     {formatCompact(
@@ -266,39 +268,38 @@ export function Widget() {
                     )}
                   </p>
                   <p
-                    className="mt-0.5 text-[9px] text-slate-500"
+                    className="mt-0.5 text-[12px] text-muted"
                     title="Context includes cached tokens"
                   >
-                    {formatCompact(data.totals.todayInputTokens)} context ·{" "}
-                    {formatCompact(data.totals.todayCachedInputTokens)} cached
+                    {formatCompact(data.totals.todayCachedInputTokens)} cached{" "}
                   </p>
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-1 text-[9px] text-sky-300/80">
+                  <div className="flex items-center gap-1 text-[12px] text-muted/80">
                     <Icon name="arrow-up-right" className="h-3 w-3" />
                     Output
                   </div>
-                  <p className="mt-0.5 text-[23px] font-semibold leading-none tracking-tight text-white tabular-nums">
+                  <p className="mt-0.5 text-[20px] font-semibold leading-none tracking-tight text-white tabular-nums">
                     {formatCompact(data.totals.todayOutputTokens)}
                   </p>
-                  <p className="mt-0.5 text-[9px] text-slate-500">
+                  <p className="mt-0.5 text-[12px] text-muted">
                     generated tokens
                   </p>
                 </div>
               </div>
 
               <div className="mt-1 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">
-                <div className="flex items-center justify-between gap-2 text-[9px]">
-                  <span className="text-slate-500">Cache hit</span>
-                  <span className="text-slate-300">
+                <div className="flex items-center justify-between gap-2 text-[12px]">
+                  <span className="text-muted">Cache hit</span>
+                  <span className="text-ink">
                     {formatPercent(data.totals.todayCacheHitRate)} ·{" "}
                     {formatCompact(data.totals.todayCachedInputTokens)} cached
                   </span>
                 </div>
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.05]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400"
+                    className="h-full rounded-full bg-gradient-to-r from-accent to-data-cyan"
                     style={{
                       width: `${Math.min(
                         100,
@@ -310,15 +311,15 @@ export function Widget() {
               </div>
 
               <div className="mt-1 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">
-                <div className="flex items-center justify-between gap-2 text-[10px]">
-                  <span className="text-slate-500">DeepSeek total</span>
-                  <span className="text-slate-200 tabular-nums">
+                <div className="flex items-center justify-between gap-2 text-[12px]">
+                  <span className="text-muted">DeepSeek total</span>
+                  <span className="text-accent-strong tabular-nums">
                     {balance
                       ? `${formatMoney(balance.totalBalance, balance.currency)} ${balance.currency}`
                       : "Not linked"}
                   </span>
                 </div>
-                <div className="mt-1 flex items-center justify-between gap-2 text-[9px] text-slate-500">
+                <div className="mt-1 flex items-center justify-between gap-2 text-[12px] text-muted">
                   <span>
                     Granted{" "}
                     {balance?.grantedBalance
@@ -335,54 +336,55 @@ export function Widget() {
               </div>
 
               <div className="mt-1">
-                <div className="flex items-center justify-between text-[9px] text-slate-600">
+                <div className="flex items-center justify-between text-[12px] text-muted">
                   <span>Last 14 days</span>
                   <span className="flex items-center gap-2">
                     <span className="flex items-center gap-1">
-                      <span className="h-1 w-1 rounded-full bg-teal-300" />
+                      <span className="h-1 w-1 rounded-full text-accent" />
                       New in
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-1 w-1 rounded-full bg-sky-300" />
+                      <span className="h-1 w-1 rounded-full text-accent-strong" />
                       Out
                     </span>
                   </span>
                 </div>
-                <svg
-                  viewBox="0 0 100 30"
-                  preserveAspectRatio="none"
-                  className="mt-1 h-5 w-full overflow-visible"
-                  aria-label="New input and output tokens over the last 14 days"
-                >
-                  <line
-                    x1="0"
-                    y1="29"
-                    x2="100"
-                    y2="29"
-                    stroke="rgba(255,255,255,0.06)"
-                    strokeWidth="1"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <polyline
-                    points={outputPoints}
-                    fill="none"
-                    stroke="#38bdf8"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <polyline
-                    points={inputPoints}
-                    fill="none"
-                    stroke="#2dd4bf"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </svg>
               </div>
+
+              <svg
+                viewBox="0 0 100 30"
+                preserveAspectRatio="none"
+                className="mt-1 h-5 w-full overflow-visible"
+                aria-label="New input and output tokens over the last 14 days"
+              >
+                <line
+                  x1="0"
+                  y1="29"
+                  x2="100"
+                  y2="29"
+                  stroke="rgba(255,255,255,0.06)"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polyline
+                  points={outputPoints}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polyline
+                  points={inputPoints}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
             </>
           ) : null}
         </div>
@@ -392,14 +394,14 @@ export function Widget() {
             <button
               type="button"
               onClick={() => void handleOpenDashboard()}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-teal-300 transition-colors hover:bg-teal-400/[0.08] hover:text-teal-200"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-medium text-accent transition-colors:hover:bg-accent/80 hover:text-white"
             >
               Open TokenFlow
               <Icon name="arrow-up-right" className="h-3 w-3" />
             </button>
             <div className="flex items-center gap-2">
               <span
-                className="text-[9px] text-slate-600"
+                className="text-[12px] text-muted"
                 title={
                   data
                     ? `Updated ${formatRelative(data.generatedAt)}`
@@ -411,7 +413,7 @@ export function Widget() {
               <button
                 type="button"
                 onClick={() => void handleQuit()}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-slate-500 transition-colors hover:bg-rose-500/[0.08] hover:text-rose-300"
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-muted transition-colors:hover:bg-danger/80 hover:text-danger"
               >
                 <Icon name="power" className="h-3 w-3" />
                 Quit

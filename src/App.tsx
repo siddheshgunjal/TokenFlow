@@ -105,16 +105,16 @@ export default function App() {
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-6 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold tracking-tight text-white">
+              <h1 className="text-2xl font-semibold tracking-tight text-white">
                 {page === "dashboard" ? "Usage overview" : "Settings"}
               </h1>
               {!isTauri ? (
-                <span className="chip border-amber-400/20 bg-amber-400/[0.06] text-amber-300">
+                <span className="border-warning/20 bg-warning/10 text-warning/80">
                   Browser preview
                 </span>
               ) : null}
             </div>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="text-sm text-muted">
               {page === "dashboard"
                 ? "Local-first telemetry from your Ollama proxy."
                 : "Configure the proxy, DeepSeek account, and desktop behavior."}
@@ -123,7 +123,7 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             {lastUpdated ? (
-              <span className="mr-1 hidden text-[11px] text-slate-600 sm:inline">
+              <span className="mr-1 hidden text-[12px] text-ink sm:inline">
                 Updated{" "}
                 {new Date(lastUpdated).toLocaleTimeString(undefined, {
                   hour: "2-digit",
@@ -156,15 +156,13 @@ export default function App() {
 
         <main className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {error ? (
-            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3">
-              <Icon name="alert" className="h-4 w-4 shrink-0 text-rose-300" />
-              <p className="min-w-0 flex-1 text-xs leading-relaxed text-rose-200/80">
-                {error}
-              </p>
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3">
+              <Icon name="alert" className="h-4 w-4 shrink-0 text-danger" />
+              <p className="text-[12px] leading-relaxed text-danger">{error}</p>
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="btn-secondary border-rose-400/20 text-rose-200 hover:bg-rose-500/10"
+                className="btn-secondary border-danger/20 text-danger/80 hover:bg-danger/20"
               >
                 Retry
               </button>

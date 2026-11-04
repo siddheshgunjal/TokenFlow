@@ -32,7 +32,7 @@ mod desktop {
 
         TrayIconBuilder::with_id("tokenflow-tray")
             .icon(tauri::image::Image::from_bytes(include_bytes!(
-                "../icons/128x128.png"
+                "../icons/tray-64.png"
             ))?)
             .tooltip("TokenFlow — Ollama & DeepSeek usage")
             .menu(&menu)
@@ -95,7 +95,7 @@ mod linux {
     /// Flatpak sandbox. `Icon` expects ARGB32 in network byte order.
     static ICON: LazyLock<Icon> = LazyLock::new(|| {
         let image = image::load_from_memory_with_format(
-            include_bytes!("../icons/128x128.png"),
+            include_bytes!("../icons/tray-128.png"),
             image::ImageFormat::Png,
         )
         .expect("embedded tray icon is a valid PNG");

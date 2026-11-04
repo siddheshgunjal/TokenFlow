@@ -5,9 +5,9 @@ import { classNames } from "../lib/format";
 
 const accents = {
   teal: "bg-accent/10 text-accent ring-accent/20",
-  violet: "bg-violet-400/10 text-violet-300 ring-violet-400/20",
-  amber: "bg-amber-400/10 text-amber-300 ring-amber-400/20",
-  sky: "bg-sky-400/10 text-sky-300 ring-sky-400/20",
+  violet: "bg-accent-strong/10 text-accent-strong ring-accent-strong/20",
+  amber: "bg-warning/10 text-warning ring-warning/20",
+  sky: "bg-accent-blue/10 text-accent-blue ring-accent-blue/20",
 } as const;
 
 export function StatCard({
@@ -43,12 +43,12 @@ export function StatCard({
           {icon}
         </span>
       </div>
-      <p className="mt-3 whitespace-nowrap text-[25px] font-semibold leading-none tracking-tight text-white tabular-nums xl:text-[27px]">
+      <p className="mt-3 whitespace-nowrap text-[20px] font-semibold leading-none tracking-tight text-white tabular-nums xl:text-[22px]">
         {value}
       </p>
       {hint ? (
         <p
-          className="mt-2 break-words text-[11px] leading-4 text-slate-500"
+          className="mt-2 break-words text-[12px] leading-4 text-muted"
           title={hint}
         >
           {hint}

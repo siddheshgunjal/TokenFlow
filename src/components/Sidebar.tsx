@@ -1,9 +1,7 @@
-import { motion } from "framer-motion";
-
 import { classNames } from "../lib/format";
 import type { ProxyStatus } from "../lib/types";
 import { Icon, type IconName } from "./Icons";
-import { Logo } from "./Logo";
+import { Logo, Wordmark } from "./Logo";
 
 export type Page = "dashboard" | "settings";
 
@@ -26,12 +24,7 @@ export function Sidebar({
       <div className="flex items-center gap-2.5 px-5 pb-6 pt-6">
         <Logo className="h-9 w-9" />
         <div className="min-w-0">
-          <p className="text-sm font-semibold tracking-tight text-white">
-            TokenFlow
-          </p>
-          <p className="truncate text-[10px] text-slate-500">
-            Ollama + DeepSeek usage
-          </p>
+          <Wordmark className="text-base font-semibold tracking-tight text-white" />
         </div>
       </div>
 
@@ -43,22 +36,19 @@ export function Sidebar({
               key={item.id}
               type="button"
               onClick={() => onNavigate(item.id)}
-              className={classNames("nav-item", active && "text-white")}
+              className={classNames(
+                "nav-item",
+                active &&
+                  "text-white bg-accent/20 ring-1 ring-inset ring-accent/40",
+              )}
               aria-current={active ? "page" : undefined}
             >
-              {active ? (
-                <motion.span
-                  layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-xl border border-teal-400/15 bg-teal-400/[0.08]"
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                />
-              ) : null}
               <Icon name={item.icon} className="relative h-4 w-4" />
               <span className="relative">{item.label}</span>
               {active ? (
                 <Icon
                   name="chevron-right"
-                  className="relative ml-auto h-3.5 w-3.5 text-teal-300/70"
+                  className="relative ml-auto h-3.5 w-3.5 text-accent/70"
                 />
               ) : null}
             </button>
@@ -68,24 +58,24 @@ export function Sidebar({
 
       <div className="mt-auto p-3">
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted">
             <span
               className={classNames(
                 "h-1.5 w-1.5 rounded-full",
                 proxy.running
-                  ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
-                  : "bg-rose-400",
+                  ? "bg-success shadow-[0_0_8px_rgba(34,197,95,0.7)]"
+                  : "bg-danger",
               )}
             />
             Proxy {proxy.running ? "online" : "offline"}
           </div>
           <p
-            className="mt-1.5 truncate font-mono text-[10px] text-slate-600"
+            className="mt-1.5 truncate font-mono text-xs text-slate-600"
             title={proxy.error ?? proxy.bindAddress}
           >
             {proxy.running ? proxy.bindAddress : (proxy.error ?? "Starting…")}
           </p>
-          <div className="mt-3 flex items-center gap-1.5 text-[10px] text-slate-600">
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-600">
             <Icon name="shield" className="h-3 w-3" />
             Stored on this device
           </div>
