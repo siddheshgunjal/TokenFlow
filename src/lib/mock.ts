@@ -137,7 +137,7 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
     else break;
   }
 
-  const recent: OllamaLog[] = Array.from({ length: 8 }, (_, index) => {
+  const recent: OllamaLog[] = Array.from({ length: 15 }, (_, index) => {
     const model = MODEL_NAMES[index % MODEL_NAMES.length];
     const prompt = 240 + Math.floor(noise(index + 31) * 1800);
     const completion =

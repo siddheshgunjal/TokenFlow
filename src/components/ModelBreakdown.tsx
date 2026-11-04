@@ -15,8 +15,8 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
   const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
 
   return (
-    <section className="card p-5">
-      <div className="flex items-start justify-between gap-3">
+    <section className="card flex h-full min-h-0 flex-col p-5">
+      <div className="flex items-start justify-between gap-3 shrink-0">
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-muted">Models</h2>
           <p className="mt-1 text-xs text-muted">
@@ -29,14 +29,14 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
       </div>
 
       {models.length === 0 ? (
-        <div className="mt-8 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
+        <div className="mt-5 flex min-h-0 flex-1 flex-col justify-center rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
           <p className="text-sm text-muted">No model usage yet</p>
           <p className="mt-1 text-xs text-muted">
             Point an Ollama client at the proxy to populate this list.
           </p>
         </div>
       ) : (
-        <div className="mt-5 space-y-4">
+        <div className="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1">
           {models.map((model, index) => {
             const newInput = model.newInputTokens;
             const modelInference = model.totalTokens;
