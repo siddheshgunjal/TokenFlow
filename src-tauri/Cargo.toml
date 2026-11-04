@@ -22,6 +22,9 @@ tempfile = "3"
 # Desktop shell
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-shell = "2"
+# Must be registered before every other plugin so a second launch exits early.
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -61,6 +64,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # including the `Activate` method that libayatana-appindicator does not expose.
 # The icon is embedded as ARGB32 so the host panel never reads sandbox paths.
 [target.'cfg(target_os = "linux")'.dependencies]
+# Flatpak autostart uses the XDG Background portal; the portal is unavailable
+# outside a sandbox, where the autostart plugin writes the XDG entry directly.
+ashpd = { version = "0.12", default-features = false, features = ["tokio"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 ksni = { version = "0.3", features = ["blocking"] }
 keyring = { version = "3", default-features = false, features = [
