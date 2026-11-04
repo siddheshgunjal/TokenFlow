@@ -23,17 +23,25 @@ pub struct BalanceInfoInput {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Totals {
-    pub input_tokens: i64,
+    /// Sum of newly evaluated prompt tokens (uncached) over the range.
+    pub new_input_tokens: i64,
+    /// Sum of generated tokens over the range.
     pub output_tokens: i64,
-    pub cached_input_tokens: i64,
+    /// `new_input_tokens + output_tokens`.
     pub total_tokens: i64,
     pub requests: i64,
-    pub today_input_tokens: i64,
+    /// Largest prompt size observed today. Context is a gauge, so it is not
+    /// summed across requests.
+    pub today_peak_context_tokens: i64,
+    /// Prompt size of the most recent request today.
+    pub latest_context_tokens: i64,
+    /// Cached prefix reported by the most recent request today.
+    pub latest_cached_input_tokens: i64,
+    pub today_new_input_tokens: i64,
     pub today_output_tokens: i64,
-    pub today_cached_input_tokens: i64,
     pub today_tokens: i64,
     pub today_requests: i64,
-    /// Cached input divided by total input, in the 0.0–1.0 range.
+    /// Token-weighted cache share: sum(cached) / sum(prompt), 0.0–1.0.
     pub cache_hit_rate: f64,
     pub today_cache_hit_rate: f64,
 }
@@ -42,11 +50,17 @@ pub struct Totals {
 #[serde(rename_all = "camelCase")]
 pub struct ModelUsage {
     pub model: String,
-    pub input_tokens: i64,
+    /// Sum of newly evaluated prompt tokens.
+    pub new_input_tokens: i64,
     pub output_tokens: i64,
+    /// Largest prompt size observed for this model in the range.
+    pub context_tokens: i64,
+    /// Cached prefix reported by the request that produced `context_tokens`.
     pub cached_input_tokens: i64,
+    /// `new_input_tokens + output_tokens`.
     pub total_tokens: i64,
     pub requests: i64,
+    /// Token-weighted cache share: sum(cached) / sum(prompt), 0.0–1.0.
     pub cache_hit_rate: f64,
 }
 
@@ -55,11 +69,22 @@ pub struct ModelUsage {
 pub struct DailyUsage {
     /// Local calendar date in `YYYY-MM-DD` format.
     pub date: String,
-    pub input_tokens: i64,
+    /// Sum of newly evaluated prompt tokens that day.
+    pub new_input_tokens: i64,
     pub output_tokens: i64,
+    /// Largest prompt size observed that day.
+    pub context_tokens: i64,
+    /// Cached prefix reported by the request that produced `context_tokens`.
     pub cached_input_tokens: i64,
+    /// Sum of per-request prompt sizes. Used only as the cache-rate denominator.
+    pub context_processed_tokens: i64,
+    /// Sum of per-request cached prefixes. Used only as the cache-rate numerator.
+    pub cached_processed_tokens: i64,
+    /// `new_input_tokens + output_tokens`.
     pub total_tokens: i64,
     pub requests: i64,
+    /// Token-weighted cache share for the day, 0.0–1.0.
+    pub cache_hit_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

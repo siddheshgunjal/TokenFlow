@@ -6,13 +6,7 @@ import { Icon } from "../components/Icons";
 import { ModelBreakdown } from "../components/ModelBreakdown";
 import { RecentRequests } from "../components/RecentRequests";
 import { StatCard } from "../components/StatCard";
-import {
-  formatCompact,
-  formatNumber,
-  formatPercent,
-  inferenceTokens,
-  uncachedInputTokens,
-} from "../lib/format";
+import { formatCompact, formatNumber, formatPercent } from "../lib/format";
 import type { DashboardSummary } from "../lib/types";
 
 export function Dashboard({
@@ -85,21 +79,16 @@ export function Dashboard({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="New input today"
-          value={formatCompact(
-            uncachedInputTokens(
-              data.totals.todayInputTokens,
-              data.totals.todayCachedInputTokens,
-            ),
-          )}
-          hint={`${formatNumber(data.totals.todayRequests)} requests · ${formatCompact(data.totals.todayInputTokens)} context`}
+          label="Input today"
+          value={formatCompact(data.totals.todayNewInputTokens)}
+          hint={`${formatNumber(data.totals.todayRequests)} Requests`}
           icon={<Icon name="arrow-down-left" />}
           accent="teal"
         />
         <StatCard
           label="Output today"
           value={formatCompact(data.totals.todayOutputTokens)}
-          hint="generated tokens"
+          hint="Generated Tokens"
           icon={<Icon name="arrow-up-right" />}
           accent="sky"
           delay={0.05}
@@ -107,25 +96,16 @@ export function Dashboard({
         <StatCard
           label="Cache hit rate"
           value={formatPercent(data.totals.cacheHitRate)}
-          hint={`Today ${formatPercent(data.totals.todayCacheHitRate)} · ${formatCompact(data.totals.todayCachedInputTokens)} cached`}
+          hint={`Today ${formatPercent(data.totals.todayCacheHitRate)} · token-weighted`}
           icon={<Icon name="database" />}
           accent="violet"
           delay={0.1}
         />
         <StatCard
           label={`Last ${data.rangeDays} days`}
-          value={formatCompact(
-            inferenceTokens(
-              data.totals.inputTokens,
-              data.totals.cachedInputTokens,
-              data.totals.outputTokens,
-            ),
-          )}
+          value={formatCompact(data.totals.totalTokens)}
           hint={`New in ${formatCompact(
-            uncachedInputTokens(
-              data.totals.inputTokens,
-              data.totals.cachedInputTokens,
-            ),
+            data.totals.newInputTokens,
           )} · Out ${formatCompact(data.totals.outputTokens)}`}
           icon={<Icon name="activity" />}
           accent="amber"

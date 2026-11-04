@@ -17,7 +17,6 @@ import {
   formatNumber,
   formatPercent,
   formatRelative,
-  uncachedInputTokens,
   classNames,
 } from "../lib/format";
 import type { DashboardSummary } from "../lib/types";
@@ -128,10 +127,7 @@ export function Widget() {
   const balance = data?.latestBalance ?? null;
   const recentDays = data?.daily.slice(-14) ?? [];
   const maxGraphValue = Math.max(
-    ...recentDays.flatMap((day) => [
-      uncachedInputTokens(day.inputTokens, day.cachedInputTokens),
-      day.outputTokens,
-    ]),
+    ...recentDays.flatMap((day) => [day.newInputTokens, day.outputTokens]),
     1,
   );
 
@@ -139,12 +135,7 @@ export function Widget() {
     recentDays.length <= 1 ? 50 : (index / (recentDays.length - 1)) * 100;
   const yFor = (value: number) => 28 - (value / maxGraphValue) * 24;
   const inputPoints = recentDays
-    .map(
-      (day, index) =>
-        `${xFor(index)},${yFor(
-          uncachedInputTokens(day.inputTokens, day.cachedInputTokens),
-        )}`,
-    )
+    .map((day, index) => `${xFor(index)},${yFor(day.newInputTokens)}`)
     .join(" ");
   const outputPoints = recentDays
     .map((day, index) => `${xFor(index)},${yFor(day.outputTokens)}`)
@@ -254,24 +245,19 @@ export function Widget() {
                 <div>
                   <div className="flex items-center gap-1 text-[12px] text-muted/80">
                     <Icon name="arrow-down-left" className="h-3 w-3" />
-                    New input
+                    Input
                   </div>
                   <p
                     className="mt-0.5 text-[20px] font-semibold leading-none tracking-tight text-white tabular-nums"
                     title="Uncached input tokens evaluated by the model"
                   >
-                    {formatCompact(
-                      uncachedInputTokens(
-                        data.totals.todayInputTokens,
-                        data.totals.todayCachedInputTokens,
-                      ),
-                    )}
+                    {formatCompact(data.totals.todayNewInputTokens)}
                   </p>
                   <p
                     className="mt-0.5 text-[12px] text-muted"
-                    title="Context includes cached tokens"
+                    title="Cached tokens from the most recent request today"
                   >
-                    {formatCompact(data.totals.todayCachedInputTokens)} cached{" "}
+                    {formatCompact(data.totals.latestCachedInputTokens)} Cached
                   </p>
                 </div>
 
@@ -284,7 +270,7 @@ export function Widget() {
                     {formatCompact(data.totals.todayOutputTokens)}
                   </p>
                   <p className="mt-0.5 text-[12px] text-muted">
-                    generated tokens
+                    Generated Tokens
                   </p>
                 </div>
               </div>
@@ -293,8 +279,8 @@ export function Widget() {
                 <div className="flex items-center justify-between gap-2 text-[12px]">
                   <span className="text-muted">Cache hit</span>
                   <span className="text-ink">
-                    {formatPercent(data.totals.todayCacheHitRate)} ·{" "}
-                    {formatCompact(data.totals.todayCachedInputTokens)} cached
+                    {formatPercent(data.totals.todayCacheHitRate)} ·
+                    token-weighted
                   </span>
                 </div>
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.05]">

@@ -4,14 +4,12 @@ import {
   formatCompact,
   formatNumber,
   formatPercent,
-  inferenceTokens,
   toDateKey,
-  uncachedInputTokens,
 } from "../lib/format";
 import type { DailyUsage } from "../lib/types";
 import { Icon } from "./Icons";
 
-type Metric = "total" | "input" | "output" | "cached" | "context";
+type Metric = "total" | "input" | "output" | "utilization";
 
 const METRICS: Array<{
   id: Metric;
@@ -22,70 +20,57 @@ const METRICS: Array<{
   {
     id: "total",
     label: "All",
-    description: "inference tokens (new input + output)",
-    valueLabel: "inference tokens this month",
+    description: "Inference tokens (new input + output)",
+    valueLabel: "Inference tokens this month",
   },
   {
     id: "input",
     label: "New input",
-    description: "new input tokens",
-    valueLabel: "new input tokens this month",
+    description: "New input tokens",
+    valueLabel: "New input tokens this month",
   },
   {
     id: "output",
     label: "Output",
-    description: "output tokens",
-    valueLabel: "output tokens this month",
+    description: "Output tokens",
+    valueLabel: "Output tokens this month",
   },
   {
-    id: "context",
-    label: "Context",
-    description: "total prompt context",
-    valueLabel: "context tokens this month",
-  },
-  {
-    id: "cached",
-    label: "Cached",
-    description: "cached input tokens",
-    valueLabel: "cached tokens this month",
+    id: "utilization",
+    label: "Cache rate",
+    description: "Cache utilization (cached ÷ prompt)",
+    valueLabel: "token-weighted cache rate this month",
   },
 ];
 
 const LEVEL_STYLES: Record<Metric, string[]> = {
   total: [
     "border-white/[0.03] bg-white/[0.04]",
-    "bg-accent/5 border-accent/20 text-accent ring-accent/20",
-    "bg-accent/10 border-accent/30 text-accent ring-accent/30",
-    "bg-accent/15 border-accent/40 text-accent ring-accent/40",
-    "bg-accent/20 border-accent/50 text-accent ring-accent/50",
+    "bg-accent/[0.07] border-accent/25 text-accent ring-accent/25",
+    "bg-accent/[0.18] border-accent/40 text-accent ring-accent/40",
+    "bg-data-cyan/[0.30] border-data-cyan/55 text-data-cyan ring-data-cyan/55",
+    "bg-accent/[0.55] border-accent-hover/75 text-accent-hover ring-accent-hover/75",
   ],
   input: [
     "border-white/[0.03] bg-white/[0.04]",
-    "bg-accent/5 border-accent/20 text-accent ring-accent/20",
-    "bg-accent/10 border-accent/30 text-accent ring-accent/30",
-    "bg-accent/15 border-accent/40 text-accent ring-accent/40",
-    "bg-accent/20 border-accent/50 text-accent ring-accent/50",
+    "bg-success/[0.07] border-success/25 text-success ring-success/25",
+    "bg-success/[0.18] border-success/40 text-success ring-success/40",
+    "bg-[#4ade80]/[0.30] border-[#4ade80]/55 text-[#4ade80] ring-[#4ade80]/55",
+    "bg-[#86efac]/[0.55] border-[#86efac]/75 text-[#86efac] ring-[#86efac]/75",
   ],
   output: [
     "border-white/[0.03] bg-white/[0.04]",
-    "bg-accent-blue/5 border-accent-blue/20 text-accent-blue ring-accent-blue/20",
-    "bg-accent-blue/10 border-accent-blue/30 text-accent-blue ring-accent-blue/30",
-    "bg-accent-blue/15 border-accent-blue/40 text-accent-blue ring-accent-blue/40",
-    "bg-accent-blue/20 border-accent-blue/50 text-accent-blue ring-accent-blue/50",
+    "bg-accent-blue/[0.07] border-accent-blue/25 text-accent-blue ring-accent-blue/25",
+    "bg-accent-blue/[0.18] border-accent-blue/40 text-accent-blue ring-accent-blue/40",
+    "bg-[#60a5fa]/[0.30] border-[#60a5fa]/55 text-[#60a5fa] ring-[#60a5fa]/55",
+    "bg-[#93c5fd]/[0.55] border-[#93c5fd]/75 text-[#93c5fd] ring-[#93c5fd]/75",
   ],
-  context: [
+  utilization: [
     "border-white/[0.03] bg-white/[0.04]",
-    "bg-warning/5 border-warning/20 text-warning ring-warning/20",
-    "bg-warning/10 border-warning/30 text-warning ring-warning/30",
-    "bg-warning/15 border-warning/40 text-warning ring-warning/40",
-    "bg-warning/20 border-warning/50 text-warning ring-warning/50",
-  ],
-  cached: [
-    "border-white/[0.03] bg-white/[0.04]",
-    "bg-accent-strong/5 border-accent-strong/20 text-accent-strong ring-accent-strong/20",
-    "bg-accent-strong/10 border-accent-strong/30 text-accent-strong ring-accent-strong/30",
-    "bg-accent-strong/15 border-accent-strong/40 text-accent-strong ring-accent-strong/40",
-    "bg-accent-strong/20 border-accent-strong/50 text-accent-strong ring-accent-strong/50",
+    "bg-[#a78bfa]/[0.07] border-[#a78bfa]/25 text-[#a78bfa] ring-[#a78bfa]/25",
+    "bg-[#a78bfa]/[0.18] border-[#a78bfa]/40 text-[#a78bfa] ring-[#a78bfa]/40",
+    "bg-[#c4b5fd]/[0.30] border-[#c4b5fd]/55 text-[#c4b5fd] ring-[#c4b5fd]/55",
+    "bg-[#e9d5ff]/[0.55] border-[#e9d5ff]/75 text-[#e9d5ff] ring-[#e9d5ff]/75",
   ],
 };
 
@@ -151,8 +136,21 @@ export function ActivityHeatmap({
     (sum, cell) => sum + valueFor(cell.usage, metric),
     0,
   );
+  const monthProcessedContext = monthDays.reduce(
+    (sum, cell) => sum + (cell.usage?.contextProcessedTokens ?? 0),
+    0,
+  );
+  const monthProcessedCached = monthDays.reduce(
+    (sum, cell) => sum + (cell.usage?.cachedProcessedTokens ?? 0),
+    0,
+  );
+  const monthUtilization =
+    monthProcessedContext > 0
+      ? monthProcessedCached / monthProcessedContext
+      : 0;
+  const summaryValue = metric === "utilization" ? monthUtilization : monthTotal;
   const activeDays = monthDays.filter(
-    (cell) => valueFor(cell.usage, metric) > 0,
+    (cell) => (cell.usage?.requests ?? 0) > 0,
   ).length;
 
   const calendarCells: Array<DayCell | null> = [
@@ -163,14 +161,24 @@ export function ActivityHeatmap({
     calendarCells.push(null);
   }
 
-  const levelFor = (tokens: number): number => {
-    if (tokens <= 0 || monthMax <= 0) return 0;
-    const ratio = tokens / monthMax;
+  const levelFor = (value: number): number => {
+    if (metric === "utilization") {
+      if (value <= 0) return 0;
+      if (value <= 0.25) return 1;
+      if (value <= 0.5) return 2;
+      if (value <= 0.75) return 3;
+      return 4;
+    }
+    if (value <= 0 || monthMax <= 0) return 0;
+    const ratio = value / monthMax;
     if (ratio <= 0.2) return 1;
     if (ratio <= 0.45) return 2;
     if (ratio <= 0.7) return 3;
     return 4;
   };
+
+  const formatMetricValue = (value: number): string =>
+    metric === "utilization" ? formatPercent(value) : formatCompact(value);
 
   interface DayCell {
     date: Date;
@@ -206,7 +214,7 @@ export function ActivityHeatmap({
         </div>
         <div className="text-right">
           <p className="text-lg font-semibold text-white tabular-nums">
-            {formatCompact(monthTotal)}
+            {formatMetricValue(summaryValue)}
           </p>
           <p className="text-[11px] text-muted">{metricInfo.valueLabel}</p>
         </div>
@@ -307,25 +315,20 @@ export function ActivityHeatmap({
               day: "numeric",
               year: "numeric",
             });
-            const cacheRate =
-              cell.usage && cell.usage.inputTokens > 0
-                ? cell.usage.cachedInputTokens / cell.usage.inputTokens
-                : 0;
             const tooltip = isFuture
               ? `${dateLabel} · upcoming`
               : cell.usage
                 ? `${dateLabel} · new in ${formatNumber(
-                    uncachedInputTokens(
-                      cell.usage.inputTokens,
-                      cell.usage.cachedInputTokens,
-                    ),
-                  )} · context ${formatNumber(
-                    cell.usage.inputTokens,
+                    cell.usage.newInputTokens,
                   )} · out ${formatNumber(
                     cell.usage.outputTokens,
-                  )} · cached ${formatPercent(cacheRate)} (${formatNumber(
+                  )} · peak context ${formatNumber(
+                    cell.usage.contextTokens,
+                  )} (${formatNumber(
                     cell.usage.cachedInputTokens,
-                  )}) · ${formatNumber(cell.usage.requests)} requests`
+                  )} cached) · cache ${formatPercent(
+                    cell.usage.cacheHitRate,
+                  )} · ${formatNumber(cell.usage.requests)} requests`
                 : `${dateLabel} · no usage`;
 
             return (
@@ -347,7 +350,7 @@ export function ActivityHeatmap({
                     className={`text-[12px] font-semibold leading-none tabular-nums ${valueTextClass}`}
                     style={{ paddingBottom: "6px", paddingLeft: "6px" }}
                   >
-                    {formatCompact(value)}
+                    {formatMetricValue(value)}
                   </span>
                 ) : null}
               </div>
@@ -377,19 +380,13 @@ function valueFor(day: DailyUsage | undefined, metric: Metric): number {
   if (!day) return 0;
   switch (metric) {
     case "input":
-      return uncachedInputTokens(day.inputTokens, day.cachedInputTokens);
+      return day.newInputTokens;
     case "output":
       return day.outputTokens;
-    case "cached":
-      return day.cachedInputTokens;
-    case "context":
-      return day.inputTokens;
+    case "utilization":
+      return day.cacheHitRate;
     default:
-      return inferenceTokens(
-        day.inputTokens,
-        day.cachedInputTokens,
-        day.outputTokens,
-      );
+      return day.totalTokens;
   }
 }
 

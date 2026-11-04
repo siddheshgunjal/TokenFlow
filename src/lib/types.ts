@@ -1,12 +1,13 @@
 export interface Totals {
-  inputTokens: number;
+  newInputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
   totalTokens: number;
   requests: number;
-  todayInputTokens: number;
+  todayPeakContextTokens: number;
+  latestContextTokens: number;
+  latestCachedInputTokens: number;
+  todayNewInputTokens: number;
   todayOutputTokens: number;
-  todayCachedInputTokens: number;
   todayTokens: number;
   todayRequests: number;
   cacheHitRate: number;
@@ -15,8 +16,9 @@ export interface Totals {
 
 export interface ModelUsage {
   model: string;
-  inputTokens: number;
+  newInputTokens: number;
   outputTokens: number;
+  contextTokens: number;
   cachedInputTokens: number;
   totalTokens: number;
   requests: number;
@@ -25,11 +27,15 @@ export interface ModelUsage {
 
 export interface DailyUsage {
   date: string;
-  inputTokens: number;
+  newInputTokens: number;
   outputTokens: number;
+  contextTokens: number;
   cachedInputTokens: number;
+  contextProcessedTokens: number;
+  cachedProcessedTokens: number;
   totalTokens: number;
   requests: number;
+  cacheHitRate: number;
 }
 
 export interface OllamaLog {

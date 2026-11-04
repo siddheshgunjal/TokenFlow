@@ -263,12 +263,9 @@ impl Db {
         let range_start = local_midnight(today - chrono::Duration::days(i64::from(range_days) - 1));
         let heatmap_start = local_midnight(today - chrono::Duration::days(364));
 
-        let (input_tokens, output_tokens, cached_raw, requests) = totals_since(&conn, range_start)?;
-        let (today_input, today_output, today_cached_raw, today_requests) =
-            totals_since(&conn, today_start)?;
+        let range_usage = totals_since(&conn, range_start)?;
+        let today_usage = totals_since(&conn, today_start)?;
 
-        let cached_input_tokens = cached_raw.clamp(0, input_tokens);
-        let today_cached_input_tokens = today_cached_raw.clamp(0, today_input);
         let models = models_since(&conn, range_start)?;
         let daily = daily_since(&conn, heatmap_start)?;
         let recent = recent_logs(&conn, 12)?;
@@ -279,18 +276,25 @@ impl Db {
             generated_at: chrono::Utc::now().timestamp(),
             range_days,
             totals: Totals {
-                input_tokens,
-                output_tokens,
-                cached_input_tokens,
-                total_tokens: input_tokens + output_tokens,
-                requests,
-                today_input_tokens: today_input,
-                today_output_tokens: today_output,
-                today_cached_input_tokens,
-                today_tokens: today_input + today_output,
-                today_requests,
-                cache_hit_rate: cache_hit_rate(cached_input_tokens, input_tokens),
-                today_cache_hit_rate: cache_hit_rate(today_cached_input_tokens, today_input),
+                new_input_tokens: range_usage.new_input_tokens,
+                output_tokens: range_usage.output_tokens,
+                total_tokens: range_usage.new_input_tokens + range_usage.output_tokens,
+                requests: range_usage.requests,
+                today_peak_context_tokens: today_usage.peak_context_tokens,
+                latest_context_tokens: today_usage.latest_context_tokens,
+                latest_cached_input_tokens: today_usage.latest_cached_input_tokens,
+                today_new_input_tokens: today_usage.new_input_tokens,
+                today_output_tokens: today_usage.output_tokens,
+                today_tokens: today_usage.new_input_tokens + today_usage.output_tokens,
+                today_requests: today_usage.requests,
+                cache_hit_rate: cache_hit_rate(
+                    range_usage.cached_prompt_tokens,
+                    range_usage.prompt_tokens,
+                ),
+                today_cache_hit_rate: cache_hit_rate(
+                    today_usage.cached_prompt_tokens,
+                    today_usage.prompt_tokens,
+                ),
             },
             streak_days,
             models,
@@ -331,46 +335,111 @@ fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-fn totals_since(conn: &Connection, since: i64) -> rusqlite::Result<(i64, i64, i64, i64)> {
+struct UsageTotals {
+    new_input_tokens: i64,
+    output_tokens: i64,
+    prompt_tokens: i64,
+    cached_prompt_tokens: i64,
+    requests: i64,
+    peak_context_tokens: i64,
+    latest_context_tokens: i64,
+    latest_cached_input_tokens: i64,
+}
+
+fn totals_since(conn: &Connection, since: i64) -> rusqlite::Result<UsageTotals> {
     conn.query_row(
-        "SELECT COALESCE(SUM(prompt_tokens), 0),
+        "SELECT COALESCE(SUM(CASE
+                        WHEN prompt_tokens > cached_prompt_tokens
+                        THEN prompt_tokens - cached_prompt_tokens
+                        ELSE 0
+                    END), 0),
                 COALESCE(SUM(completion_tokens), 0),
+                COALESCE(SUM(prompt_tokens), 0),
                 COALESCE(SUM(cached_prompt_tokens), 0),
-                COUNT(*)
+                COUNT(*),
+                COALESCE(MAX(prompt_tokens), 0),
+                COALESCE((SELECT prompt_tokens
+                          FROM ollama_logs
+                          WHERE created_at >= ?1
+                          ORDER BY created_at DESC, id DESC
+                          LIMIT 1), 0),
+                COALESCE((SELECT cached_prompt_tokens
+                          FROM ollama_logs
+                          WHERE created_at >= ?1
+                          ORDER BY created_at DESC, id DESC
+                          LIMIT 1), 0)
          FROM ollama_logs
          WHERE created_at >= ?1",
         params![since],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        |row| {
+            Ok(UsageTotals {
+                new_input_tokens: row.get(0)?,
+                output_tokens: row.get(1)?,
+                prompt_tokens: row.get(2)?,
+                cached_prompt_tokens: row.get(3)?,
+                requests: row.get(4)?,
+                peak_context_tokens: row.get(5)?,
+                latest_context_tokens: row.get(6)?,
+                latest_cached_input_tokens: row.get(7)?,
+            })
+        },
     )
 }
 
 fn models_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<ModelUsage>> {
     let mut stmt = conn.prepare(
-        "SELECT model,
-                COALESCE(SUM(prompt_tokens), 0) AS input_tokens,
+        "WITH ranked AS (
+            SELECT model,
+                   prompt_tokens,
+                   cached_prompt_tokens,
+                   completion_tokens,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY model
+                       ORDER BY prompt_tokens DESC, created_at DESC, id DESC
+                   ) AS rn
+            FROM ollama_logs
+            WHERE created_at >= ?1
+         )
+         SELECT model,
+                COALESCE(SUM(CASE
+                    WHEN prompt_tokens > cached_prompt_tokens
+                    THEN prompt_tokens - cached_prompt_tokens
+                    ELSE 0
+                END), 0) AS new_input_tokens,
                 COALESCE(SUM(completion_tokens), 0) AS output_tokens,
-                COALESCE(SUM(cached_prompt_tokens), 0) AS cached_input_tokens,
-                COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS total_tokens,
+                MAX(CASE WHEN rn = 1 THEN prompt_tokens END) AS context_tokens,
+                MAX(CASE WHEN rn = 1 THEN cached_prompt_tokens END) AS cached_input_tokens,
+                COALESCE(SUM(CASE
+                    WHEN prompt_tokens > cached_prompt_tokens
+                    THEN prompt_tokens - cached_prompt_tokens
+                    ELSE 0
+                END) + SUM(completion_tokens), 0) AS total_tokens,
+                COALESCE(SUM(prompt_tokens), 0) AS prompt_uses,
+                COALESCE(SUM(cached_prompt_tokens), 0) AS cached_uses,
                 COUNT(*) AS requests
-         FROM ollama_logs
-         WHERE created_at >= ?1
+         FROM ranked
          GROUP BY model
          ORDER BY total_tokens DESC, model ASC
          LIMIT 12",
     )?;
 
     let rows = stmt.query_map(params![since], |row| {
-        let input_tokens: i64 = row.get(1)?;
+        let new_input_tokens: i64 = row.get(1)?;
         let output_tokens: i64 = row.get(2)?;
-        let cached_input_tokens = row.get::<_, i64>(3)?.clamp(0, input_tokens);
+        let context_tokens: i64 = row.get(3)?;
+        let cached_input_tokens = row.get::<_, i64>(4)?.clamp(0, context_tokens);
+        let total_tokens: i64 = row.get(5)?;
+        let prompt_uses: i64 = row.get(6)?;
+        let cached_uses: i64 = row.get(7)?;
         Ok(ModelUsage {
             model: row.get(0)?,
-            input_tokens,
+            new_input_tokens,
             output_tokens,
+            context_tokens,
             cached_input_tokens,
-            total_tokens: row.get(4)?,
-            requests: row.get(5)?,
-            cache_hit_rate: cache_hit_rate(cached_input_tokens, input_tokens),
+            total_tokens,
+            requests: row.get(8)?,
+            cache_hit_rate: cache_hit_rate(cached_uses, prompt_uses),
         })
     })?;
 
@@ -383,29 +452,59 @@ fn models_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<ModelUsag
 
 fn daily_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<DailyUsage>> {
     let mut stmt = conn.prepare(
-        "SELECT date(created_at, 'unixepoch', 'localtime') AS day,
-                COALESCE(SUM(prompt_tokens), 0) AS input_tokens,
+        "WITH ranked AS (
+            SELECT date(created_at, 'unixepoch', 'localtime') AS day,
+                   prompt_tokens,
+                   cached_prompt_tokens,
+                   completion_tokens,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY date(created_at, 'unixepoch', 'localtime')
+                       ORDER BY prompt_tokens DESC, created_at DESC, id DESC
+                   ) AS rn
+            FROM ollama_logs
+            WHERE created_at >= ?1
+         )
+         SELECT day,
+                COALESCE(SUM(CASE
+                    WHEN prompt_tokens > cached_prompt_tokens
+                    THEN prompt_tokens - cached_prompt_tokens
+                    ELSE 0
+                END), 0) AS new_input_tokens,
                 COALESCE(SUM(completion_tokens), 0) AS output_tokens,
-                COALESCE(SUM(cached_prompt_tokens), 0) AS cached_input_tokens,
-                COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS total_tokens,
+                MAX(CASE WHEN rn = 1 THEN prompt_tokens END) AS context_tokens,
+                MAX(CASE WHEN rn = 1 THEN cached_prompt_tokens END) AS cached_input_tokens,
+                COALESCE(SUM(CASE
+                    WHEN prompt_tokens > cached_prompt_tokens
+                    THEN prompt_tokens - cached_prompt_tokens
+                    ELSE 0
+                END) + SUM(completion_tokens), 0) AS total_tokens,
+                COALESCE(SUM(prompt_tokens), 0) AS prompt_uses,
+                COALESCE(SUM(cached_prompt_tokens), 0) AS cached_uses,
                 COUNT(*) AS requests
-         FROM ollama_logs
-         WHERE created_at >= ?1
+         FROM ranked
          GROUP BY day
          ORDER BY day ASC",
     )?;
 
     let rows = stmt.query_map(params![since], |row| {
-        let input_tokens: i64 = row.get(1)?;
+        let new_input_tokens: i64 = row.get(1)?;
         let output_tokens: i64 = row.get(2)?;
-        let cached_input_tokens = row.get::<_, i64>(3)?.clamp(0, input_tokens);
+        let context_tokens: i64 = row.get(3)?;
+        let cached_input_tokens = row.get::<_, i64>(4)?.clamp(0, context_tokens);
+        let total_tokens: i64 = row.get(5)?;
+        let prompt_uses: i64 = row.get(6)?;
+        let cached_uses: i64 = row.get(7)?;
         Ok(DailyUsage {
             date: row.get(0)?,
-            input_tokens,
+            new_input_tokens,
             output_tokens,
+            context_tokens,
             cached_input_tokens,
-            total_tokens: row.get(4)?,
-            requests: row.get(5)?,
+            context_processed_tokens: prompt_uses,
+            cached_processed_tokens: cached_uses,
+            total_tokens,
+            requests: row.get(8)?,
+            cache_hit_rate: cache_hit_rate(cached_uses, prompt_uses),
         })
     })?;
 
@@ -556,7 +655,11 @@ fn local_midnight(date: NaiveDate) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{balance_history, cache_hit_rate, run_migrations, Db};
+    use super::{
+        balance_history, cache_hit_rate, daily_since, local_midnight, models_since, run_migrations,
+        totals_since, Db,
+    };
+    use chrono::Local;
     use rusqlite::{params, Connection};
 
     #[test]
@@ -565,6 +668,70 @@ mod tests {
         assert_eq!(cache_hit_rate(120, 100), 1.0);
         assert_eq!(cache_hit_rate(-10, 100), 0.0);
         assert_eq!(cache_hit_rate(0, 0), 0.0);
+    }
+
+    #[test]
+    fn aggregates_peak_context_and_sum_only_flow_tokens() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        run_migrations(&conn).expect("migrations");
+
+        let base = local_midnight(Local::now().date_naive());
+        for (request_id, model, prompt, completion, cached, offset) in [
+            ("r1", "llama3.2", 1_000_i64, 100_i64, 0_i64, 10_i64),
+            ("r2", "llama3.2", 2_000, 100, 1_500, 20),
+            ("r3", "qwen2.5", 4_000, 200, 3_000, 30),
+        ] {
+            conn.execute(
+                "INSERT INTO ollama_logs
+                    (request_id, model, endpoint, prompt_tokens, completion_tokens,
+                     cached_prompt_tokens, created_at, duration_ms)
+                 VALUES (?1, ?2, '/api/chat', ?3, ?4, ?5, ?6, 1000)",
+                params![request_id, model, prompt, completion, cached, base + offset],
+            )
+            .expect("insert usage row");
+        }
+
+        let totals = totals_since(&conn, 0).expect("totals");
+        assert_eq!(totals.new_input_tokens, 2_500);
+        assert_eq!(totals.output_tokens, 400);
+        assert_eq!(totals.prompt_tokens, 7_000);
+        assert_eq!(totals.cached_prompt_tokens, 4_500);
+        assert_eq!(totals.requests, 3);
+        assert_eq!(totals.peak_context_tokens, 4_000);
+        assert_eq!(totals.latest_context_tokens, 4_000);
+        assert_eq!(totals.latest_cached_input_tokens, 3_000);
+
+        let models = models_since(&conn, 0).expect("models");
+        assert_eq!(models.len(), 2);
+        let llama = &models[0];
+        assert_eq!(llama.model, "llama3.2");
+        assert_eq!(llama.new_input_tokens, 1_500);
+        assert_eq!(llama.output_tokens, 200);
+        assert_eq!(llama.context_tokens, 2_000);
+        assert_eq!(llama.cached_input_tokens, 1_500);
+        assert_eq!(llama.total_tokens, 1_700);
+        assert!((llama.cache_hit_rate - 0.5).abs() < 1e-9);
+
+        let qwen = &models[1];
+        assert_eq!(qwen.model, "qwen2.5");
+        assert_eq!(qwen.new_input_tokens, 1_000);
+        assert_eq!(qwen.context_tokens, 4_000);
+        assert_eq!(qwen.cached_input_tokens, 3_000);
+        assert_eq!(qwen.total_tokens, 1_200);
+        assert!((qwen.cache_hit_rate - 0.75).abs() < 1e-9);
+
+        let daily = daily_since(&conn, 0).expect("daily");
+        assert_eq!(daily.len(), 1);
+        let day = &daily[0];
+        assert_eq!(day.new_input_tokens, 2_500);
+        assert_eq!(day.output_tokens, 400);
+        assert_eq!(day.context_tokens, 4_000);
+        assert_eq!(day.cached_input_tokens, 3_000);
+        assert_eq!(day.context_processed_tokens, 7_000);
+        assert_eq!(day.cached_processed_tokens, 4_500);
+        assert_eq!(day.total_tokens, 2_900);
+        assert_eq!(day.requests, 3);
+        assert!((day.cache_hit_rate - 4_500.0 / 7_000.0).abs() < 1e-9);
     }
 
     #[test]
