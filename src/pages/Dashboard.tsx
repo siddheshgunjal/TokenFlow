@@ -132,11 +132,11 @@ export function Dashboard({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="min-w-0 lg:col-span-2">
+      <div className="grid auto-rows-[24rem] gap-4 lg:grid-cols-5">
+        <div className="min-h-0 min-w-0 lg:col-span-2">
           <ModelBreakdown models={data.models} />
         </div>
-        <div className="min-w-0 lg:col-span-3">
+        <div className="min-h-0 min-w-0 lg:col-span-3">
           <RecentRequests logs={data.recent} />
         </div>
       </div>

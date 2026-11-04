@@ -268,7 +268,7 @@ impl Db {
 
         let models = models_since(&conn, range_start)?;
         let daily = daily_since(&conn, heatmap_start)?;
-        let recent = recent_logs(&conn, 12)?;
+        let recent = recent_logs(&conn, 15)?;
         let latest_balance = latest_balance(&conn)?;
         let streak_days = compute_streak(&daily, today);
 
