@@ -10,6 +10,9 @@
   </developer>
   <launchable type="desktop-id">io.github.siddheshgunjal.TokenFlow.desktop</launchable>
   <url type="homepage">https://github.com/siddheshgunjal/TokenFlow</url>
+  <branding>
+    <color type="primary">#00D4C0</color>
+  </branding>
   <description>
     <p>
       TokenFlow is a local-first desktop companion for Ollama and DeepSeek

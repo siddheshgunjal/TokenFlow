@@ -51,79 +51,45 @@ const METRICS: Array<{
   },
 ];
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 const LEVEL_STYLES: Record<Metric, string[]> = {
   total: [
     "border-white/[0.03] bg-white/[0.04]",
-    "border-teal-900/40 bg-teal-950/90",
-    "border-teal-700/40 bg-teal-800",
-    "border-teal-500/40 bg-teal-600",
-    "border-teal-300/40 bg-teal-400",
+    "bg-accent/5 border-accent/20 text-accent ring-accent/20",
+    "bg-accent/10 border-accent/30 text-accent ring-accent/30",
+    "bg-accent/15 border-accent/40 text-accent ring-accent/40",
+    "bg-accent/20 border-accent/50 text-accent ring-accent/50",
   ],
   input: [
     "border-white/[0.03] bg-white/[0.04]",
-    "border-teal-900/40 bg-teal-950/90",
-    "border-teal-700/40 bg-teal-800",
-    "border-teal-500/40 bg-teal-600",
-    "border-teal-300/40 bg-teal-400",
+    "bg-accent/5 border-accent/20 text-accent ring-accent/20",
+    "bg-accent/10 border-accent/30 text-accent ring-accent/30",
+    "bg-accent/15 border-accent/40 text-accent ring-accent/40",
+    "bg-accent/20 border-accent/50 text-accent ring-accent/50",
   ],
   output: [
     "border-white/[0.03] bg-white/[0.04]",
-    "border-sky-900/40 bg-sky-950/90",
-    "border-sky-700/40 bg-sky-800",
-    "border-sky-500/40 bg-sky-600",
-    "border-sky-300/40 bg-sky-400",
+    "bg-accent-blue/5 border-accent-blue/20 text-accent-blue ring-accent-blue/20",
+    "bg-accent-blue/10 border-accent-blue/30 text-accent-blue ring-accent-blue/30",
+    "bg-accent-blue/15 border-accent-blue/40 text-accent-blue ring-accent-blue/40",
+    "bg-accent-blue/20 border-accent-blue/50 text-accent-blue ring-accent-blue/50",
   ],
   context: [
     "border-white/[0.03] bg-white/[0.04]",
-    "border-amber-900/40 bg-amber-950/90",
-    "border-amber-700/40 bg-amber-800",
-    "border-amber-500/40 bg-amber-600",
-    "border-amber-300/40 bg-amber-400",
+    "bg-warning/5 border-warning/20 text-warning ring-warning/20",
+    "bg-warning/10 border-warning/30 text-warning ring-warning/30",
+    "bg-warning/15 border-warning/40 text-warning ring-warning/40",
+    "bg-warning/20 border-warning/50 text-warning ring-warning/50",
   ],
   cached: [
     "border-white/[0.03] bg-white/[0.04]",
-    "border-violet-900/40 bg-violet-950/90",
-    "border-violet-700/40 bg-violet-800",
-    "border-violet-500/40 bg-violet-600",
-    "border-violet-300/40 bg-violet-400",
+    "bg-accent-strong/5 border-accent-strong/20 text-accent-strong ring-accent-strong/20",
+    "bg-accent-strong/10 border-accent-strong/30 text-accent-strong ring-accent-strong/30",
+    "bg-accent-strong/15 border-accent-strong/40 text-accent-strong ring-accent-strong/40",
+    "bg-accent-strong/20 border-accent-strong/50 text-accent-strong ring-accent-strong/50",
   ],
 };
 
-interface DayCell {
-  date: Date;
-  key: string;
-  day: number;
-  usage: DailyUsage | undefined;
-}
-
-function valueFor(day: DailyUsage | undefined, metric: Metric): number {
-  if (!day) return 0;
-  switch (metric) {
-    case "input":
-      return uncachedInputTokens(day.inputTokens, day.cachedInputTokens);
-    case "output":
-      return day.outputTokens;
-    case "cached":
-      return day.cachedInputTokens;
-    case "context":
-      return day.inputTokens;
-    default:
-      return inferenceTokens(
-        day.inputTokens,
-        day.cachedInputTokens,
-        day.outputTokens,
-      );
-  }
-}
-
-function monthsBetween(earlier: Date, later: Date): number {
-  return (
-    (later.getFullYear() - earlier.getFullYear()) * 12 +
-    (later.getMonth() - earlier.getMonth())
-  );
-}
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function ActivityHeatmap({
   daily,
@@ -206,6 +172,13 @@ export function ActivityHeatmap({
     return 4;
   };
 
+  interface DayCell {
+    date: Date;
+    key: string;
+    day: number;
+    usage: DailyUsage | undefined;
+  }
+
   const goToPreviousMonth = () => {
     onMonthOffsetChange(Math.min(maxMonthOffset, activeOffset + 1));
   };
@@ -219,15 +192,15 @@ export function ActivityHeatmap({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-slate-200">Activity</h2>
+            <h2 className="text-base font-semibold text-ink">Activity</h2>
             {streakDays > 0 ? (
-              <span className="chip border-amber-400/15 bg-amber-400/[0.05] text-amber-200/80">
+              <span className="chip border-warning/15 bg-warning/5 text-warning/80">
                 <Icon name="zap" className="h-3 w-3" />
                 {streakDays}-day streak
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted">
             Daily {metricInfo.description}
           </p>
         </div>
@@ -235,20 +208,20 @@ export function ActivityHeatmap({
           <p className="text-lg font-semibold text-white tabular-nums">
             {formatCompact(monthTotal)}
           </p>
-          <p className="text-[11px] text-slate-500">{metricInfo.valueLabel}</p>
+          <p className="text-[11px] text-muted">{metricInfo.valueLabel}</p>
         </div>
       </div>
 
-      <div className="mt-3 inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5">
+      <div className="mt-3 inline-flex flex-wrap items-center justify-between gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5">
         {METRICS.map((entry) => (
           <button
             key={entry.id}
             type="button"
             onClick={() => setMetric(entry.id)}
-            className={`rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors ${
+            className={`rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
               metric === entry.id
                 ? "bg-white/[0.08] text-white shadow-sm"
-                : "text-slate-500 hover:text-slate-300"
+                : "text-muted hover:text-ink"
             }`}
           >
             {entry.label}
@@ -263,11 +236,11 @@ export function ActivityHeatmap({
             onClick={goToPreviousMonth}
             disabled={activeOffset >= maxMonthOffset}
             aria-label="Previous month"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-muted transition-colors hover:bg-white/[0.05] hover:text-muted disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <Icon name="chevron-right" className="h-3.5 w-3.5 rotate-180" />
           </button>
-          <p className="min-w-[9.5rem] text-center text-base font-semibold text-slate-200">
+          <p className="min-w-[9.5rem] text-center text-base font-semibold text-ink">
             {monthLabel}
           </p>
           <button
@@ -275,7 +248,7 @@ export function ActivityHeatmap({
             onClick={goToNextMonth}
             disabled={isCurrentMonth}
             aria-label="Next month"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-muted transition-colors hover:bg-white/[0.05] hover:text-muted disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <Icon name="chevron-right" className="h-3.5 w-3.5" />
           </button>
@@ -284,7 +257,7 @@ export function ActivityHeatmap({
           <button
             type="button"
             onClick={() => onMonthOffsetChange(0)}
-            className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[10px] font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
+            className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[12px] font-medium text-muted transition-colors hover:bg-white/[0.06] hover:text-muted"
           >
             Today
           </button>
@@ -292,7 +265,7 @@ export function ActivityHeatmap({
       </div>
 
       <div className="mt-3 pb-1">
-        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-slate-600">
+        <div className="grid grid-cols-7 gap-1 text-center text-[12px] font-medium uppercase tracking-[0.12em] text-muted">
           {WEEKDAYS.map((weekday) => (
             <span key={weekday} className="py-1">
               {weekday}
@@ -310,7 +283,7 @@ export function ActivityHeatmap({
               return (
                 <div
                   key={`blank-${index}`}
-                  className="min-h-[54px] rounded-lg border border-transparent"
+                  className="min-h-[60px] rounded-lg border-transparent"
                 />
               );
             }
@@ -324,19 +297,10 @@ export function ActivityHeatmap({
               : LEVEL_STYLES[metric][level];
             const dayTextClass = isFuture
               ? "text-slate-700"
-              : level === 4
-                ? "text-slate-900"
-                : level === 3
-                  ? "text-white/90"
-                  : isToday
-                    ? "text-teal-200"
-                    : "text-slate-400";
-            const valueTextClass =
-              level === 4
-                ? "text-slate-900"
-                : level === 3
-                  ? "text-white"
-                  : "text-slate-300";
+              : level >= 3 || isToday
+                ? "text-white"
+                : "text-muted";
+            const valueTextClass = level >= 3 ? "text-white" : "text-muted";
 
             const dateLabel = cell.date.toLocaleDateString(undefined, {
               month: "short",
@@ -368,20 +332,20 @@ export function ActivityHeatmap({
               <div
                 key={cell.key}
                 title={tooltip}
-                className={`flex min-h-[54px] min-w-0 flex-col items-start justify-between gap-1 rounded-lg border p-1.5 transition-colors ${levelStyle} ${
-                  isToday
-                    ? "ring-1 ring-teal-300/60 ring-offset-2 ring-offset-panel"
-                    : ""
-                }`}
+                className={`flex min-h-[60px] min-w-0 flex-col items-start justify-between gap-1 rounded-lg border ${
+                  levelStyle
+                } ${isToday ? "ring-1 ring-accent/60 ring-offset-panel" : ""}`}
               >
                 <span
-                  className={`text-[10px] leading-none tabular-nums ${dayTextClass}`}
+                  className={`text-[12px] leading-none tabular-nums ${dayTextClass}`}
+                  style={{ paddingTop: "6px", paddingLeft: "6px" }}
                 >
                   {cell.day}
                 </span>
                 {cell.usage && !isFuture ? (
                   <span
-                    className={`text-[10px] font-semibold leading-none tabular-nums ${valueTextClass}`}
+                    className={`text-[12px] font-semibold leading-none tabular-nums ${valueTextClass}`}
+                    style={{ paddingBottom: "6px", paddingLeft: "6px" }}
                   >
                     {formatCompact(value)}
                   </span>
@@ -392,7 +356,7 @@ export function ActivityHeatmap({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-600">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-muted">
         <span>{activeDays} active days this month</span>
         <div className="flex items-center gap-1.5">
           <span>Less</span>
@@ -406,5 +370,32 @@ export function ActivityHeatmap({
         </div>
       </div>
     </section>
+  );
+}
+
+function valueFor(day: DailyUsage | undefined, metric: Metric): number {
+  if (!day) return 0;
+  switch (metric) {
+    case "input":
+      return uncachedInputTokens(day.inputTokens, day.cachedInputTokens);
+    case "output":
+      return day.outputTokens;
+    case "cached":
+      return day.cachedInputTokens;
+    case "context":
+      return day.inputTokens;
+    default:
+      return inferenceTokens(
+        day.inputTokens,
+        day.cachedInputTokens,
+        day.outputTokens,
+      );
+  }
+}
+
+function monthsBetween(earlier: Date, later: Date): number {
+  return (
+    (later.getFullYear() - earlier.getFullYear()) * 12 +
+    (later.getMonth() - earlier.getMonth())
   );
 }

@@ -10,10 +10,10 @@ import {
 import type { ModelUsage } from "../lib/types";
 
 const BAR_STYLES = [
-  "bg-gradient-to-r from-teal-400 to-cyan-300",
-  "bg-gradient-to-r from-sky-400 to-blue-400",
-  "bg-gradient-to-r from-violet-400 to-fuchsia-400",
-  "bg-gradient-to-r from-amber-400 to-orange-400",
+  "bg-gradient-to-r from-accent to-accent/50",
+  "bg-gradient-to-r from-accent-blue to-accent-blue/50",
+  "bg-gradient-to-r from-accent-strong to-accent-strong/50",
+  "bg-gradient-to-r from-warning to-warning/50",
 ];
 
 export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
@@ -42,8 +42,8 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
     <section className="card p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-slate-200">Models</h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <h2 className="text-base font-semibold text-muted">Models</h2>
+          <p className="mt-1 text-xs text-muted">
             New input, output, and cache share
           </p>
         </div>
@@ -54,8 +54,8 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
 
       {models.length === 0 ? (
         <div className="mt-8 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
-          <p className="text-sm text-slate-400">No model usage yet</p>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="text-sm text-muted">No model usage yet</p>
+          <p className="mt-1 text-xs text-muted">
             Point an Ollama client at the proxy to populate this list.
           </p>
         </div>
@@ -83,10 +83,10 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
             return (
               <div key={model.model}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="truncate font-mono text-xs text-slate-300">
+                  <span className="truncate font-mono text-[13px] text-muted">
                     {model.model}
                   </span>
-                  <span className="shrink-0 text-xs text-slate-400 tabular-nums">
+                  <span className="shrink-0 text-[13px] text-muted tabular-nums">
                     {formatCompact(modelInference)}
                   </span>
                 </div>
@@ -102,7 +102,7 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
                     className={`h-full rounded-full ${BAR_STYLES[index % BAR_STYLES.length]}`}
                   />
                 </div>
-                <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-600">
+                <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted">
                   <span
                     className="truncate"
                     title={`${formatNumber(model.inputTokens)} context · ${formatNumber(model.cachedInputTokens)} cached`}
