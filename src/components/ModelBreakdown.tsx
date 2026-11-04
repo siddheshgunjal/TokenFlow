@@ -1,12 +1,6 @@
 import { motion } from "framer-motion";
 
-import {
-  formatCompact,
-  formatNumber,
-  formatPercent,
-  inferenceTokens,
-  uncachedInputTokens,
-} from "../lib/format";
+import { formatCompact, formatNumber, formatPercent } from "../lib/format";
 import type { ModelUsage } from "../lib/types";
 
 const BAR_STYLES = [
@@ -17,26 +11,8 @@ const BAR_STYLES = [
 ];
 
 export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
-  const maxTokens = Math.max(
-    ...models.map((model) =>
-      inferenceTokens(
-        model.inputTokens,
-        model.cachedInputTokens,
-        model.outputTokens,
-      ),
-    ),
-    1,
-  );
-  const totalTokens = models.reduce(
-    (sum, model) =>
-      sum +
-      inferenceTokens(
-        model.inputTokens,
-        model.cachedInputTokens,
-        model.outputTokens,
-      ),
-    0,
-  );
+  const maxTokens = Math.max(...models.map((model) => model.totalTokens), 1);
+  const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
 
   return (
     <section className="card p-5">
@@ -62,15 +38,8 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
       ) : (
         <div className="mt-5 space-y-4">
           {models.map((model, index) => {
-            const newInput = uncachedInputTokens(
-              model.inputTokens,
-              model.cachedInputTokens,
-            );
-            const modelInference = inferenceTokens(
-              model.inputTokens,
-              model.cachedInputTokens,
-              model.outputTokens,
-            );
+            const newInput = model.newInputTokens;
+            const modelInference = model.totalTokens;
             const width = Math.max(
               2,
               Math.round((modelInference / maxTokens) * 100),
@@ -105,7 +74,7 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
                 <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted">
                   <span
                     className="truncate"
-                    title={`${formatNumber(model.inputTokens)} context · ${formatNumber(model.cachedInputTokens)} cached`}
+                    title={`${formatNumber(model.contextTokens)} peak context · ${formatNumber(model.cachedInputTokens)} cached at peak`}
                   >
                     New in {formatCompact(newInput)} · Out{" "}
                     {formatCompact(model.outputTokens)} · Cache{" "}

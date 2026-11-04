@@ -211,19 +211,28 @@ configured proxy port.
 
 ### Token metrics
 
-- **New input** is uncached input (`prompt_eval_count - prompt_eval_cached_count`).
-  This is the primary input metric: tokens actually evaluated by the model.
-- **Context** is the total prompt context (`prompt_eval_count`), including the
-  cached prefix.
-- **Output** is generated tokens (`eval_count`).
-- **Cached input** is `prompt_eval_cached_count` from Ollama.
-- **Cache hit rate** is `cached / context`.
+TokenFlow separates additive **flow** metrics from per-request **gauge** metrics.
+
+- **New input** is uncached input (`prompt_eval_count - prompt_eval_cached_count`)
+  summed across requests. This is the primary input metric: tokens actually
+  evaluated by the model.
+- **Output** is generated tokens (`eval_count`), summed across requests.
+- **Context** is the prompt size of one request (`prompt_eval_count`), including
+  the cached prefix. It is a gauge, not a flow: chat clients resend the
+  conversation on every turn, so summing it would count the same prefix
+  repeatedly. Daily and per-model views show the peak context observed; the
+  tray panel shows the most recent request's context.
+- **Cached input** is `prompt_eval_cached_count` (or
+  `usage.prompt_tokens_details.cached_tokens`) from the request that produced
+  the displayed context.
+- **Cache hit rate** is token-weighted: `sum(cached) / sum(context)` across the
+  selected range or day.
 
 For OpenAI-compatible responses, TokenFlow also reads
 `usage.prompt_tokens_details.cached_tokens`. The same fields are shown in the
 dashboard, recent-request table, and tray panel. The activity calendar can
-switch between inference (new input + output), new input, context, output, and
-cached views. Next to it, the DeepSeek card draws an area chart of the total
+switch between inference (new input + output), new input, output, and cache-rate
+utilization views. Next to it, the DeepSeek card draws an area chart of the total
 available balance with **Month**, **Week**, and **Day** ranges. **Week** is the
 default and always shows the current Sunday–Saturday week. **Month** follows the
 month selected in the activity calendar; **Day** always shows today.
@@ -334,10 +343,10 @@ the Flatpak test matrix.
   toplevel window. This is what makes the widget appear under the tray icon
   instead of in the middle of the screen. Set `TOKENFLOW_NO_XWAYLAND=1` to opt
   out (the widget will then be placed by the compositor).
-- The panel shows new (uncached) input, total context, cached input, output,
-  cache hit rate, DeepSeek total/granted/topped-up balance, and a 14-day
-  new-input/output graph. **Open TokenFlow** and **Quit** are always available at
-  the bottom.
+- The panel shows new (uncached) input and output for today, the latest
+  request's context and cached prefix, token-weighted cache hit rate, DeepSeek
+  total/granted/topped-up balance, and a 14-day new-input/output graph.
+  **Open TokenFlow** and **Quit** are always available at the bottom.
 - Opening the panel from the tray triggers an immediate data refresh, because
   hidden webviews throttle their timers. The header also has a manual refresh
   button that polls DeepSeek and reloads the local usage summary.
@@ -347,8 +356,11 @@ the Flatpak test matrix.
 
 - Native Ollama `/api/generate` and `/api/chat` responses report
   `prompt_eval_count`, `prompt_eval_cached_count`, and `eval_count`; these are
-  recorded. `prompt_eval_count` is the total context, so uncached input is the
-  difference between it and the cached count.
+  recorded. `prompt_eval_count` is the full prompt size, so uncached input is the
+  difference between it and the cached count. Because chat clients resend the
+  conversation on every turn, context and cached values are never summed across
+  requests; TokenFlow reports peak context per day/model and the latest request
+  in the tray.
 - OpenAI-compatible requests only report usage when the upstream includes a
   `usage` object. TokenFlow records what Ollama/DeepSeek reports and does not
   estimate tokens.

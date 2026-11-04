@@ -4,14 +4,12 @@ import {
   formatCompact,
   formatNumber,
   formatPercent,
-  inferenceTokens,
   toDateKey,
-  uncachedInputTokens,
 } from "../lib/format";
 import type { DailyUsage } from "../lib/types";
 import { Icon } from "./Icons";
 
-type Metric = "total" | "input" | "output" | "cached" | "context";
+type Metric = "total" | "input" | "output" | "utilization";
 
 const METRICS: Array<{
   id: Metric;
@@ -151,8 +149,21 @@ export function ActivityHeatmap({
     (sum, cell) => sum + valueFor(cell.usage, metric),
     0,
   );
+  const monthProcessedContext = monthDays.reduce(
+    (sum, cell) => sum + (cell.usage?.contextProcessedTokens ?? 0),
+    0,
+  );
+  const monthProcessedCached = monthDays.reduce(
+    (sum, cell) => sum + (cell.usage?.cachedProcessedTokens ?? 0),
+    0,
+  );
+  const monthUtilization =
+    monthProcessedContext > 0
+      ? monthProcessedCached / monthProcessedContext
+      : 0;
+  const summaryValue = metric === "utilization" ? monthUtilization : monthTotal;
   const activeDays = monthDays.filter(
-    (cell) => valueFor(cell.usage, metric) > 0,
+    (cell) => (cell.usage?.requests ?? 0) > 0,
   ).length;
 
   const calendarCells: Array<DayCell | null> = [
@@ -163,14 +174,24 @@ export function ActivityHeatmap({
     calendarCells.push(null);
   }
 
-  const levelFor = (tokens: number): number => {
-    if (tokens <= 0 || monthMax <= 0) return 0;
-    const ratio = tokens / monthMax;
+  const levelFor = (value: number): number => {
+    if (metric === "utilization") {
+      if (value <= 0) return 0;
+      if (value <= 0.25) return 1;
+      if (value <= 0.5) return 2;
+      if (value <= 0.75) return 3;
+      return 4;
+    }
+    if (value <= 0 || monthMax <= 0) return 0;
+    const ratio = value / monthMax;
     if (ratio <= 0.2) return 1;
     if (ratio <= 0.45) return 2;
     if (ratio <= 0.7) return 3;
     return 4;
   };
+
+  const formatMetricValue = (value: number): string =>
+    metric === "utilization" ? formatPercent(value) : formatCompact(value);
 
   interface DayCell {
     date: Date;
@@ -206,7 +227,7 @@ export function ActivityHeatmap({
         </div>
         <div className="text-right">
           <p className="text-lg font-semibold text-white tabular-nums">
-            {formatCompact(monthTotal)}
+            {formatMetricValue(summaryValue)}
           </p>
           <p className="text-[11px] text-muted">{metricInfo.valueLabel}</p>
         </div>
@@ -307,25 +328,20 @@ export function ActivityHeatmap({
               day: "numeric",
               year: "numeric",
             });
-            const cacheRate =
-              cell.usage && cell.usage.inputTokens > 0
-                ? cell.usage.cachedInputTokens / cell.usage.inputTokens
-                : 0;
             const tooltip = isFuture
               ? `${dateLabel} · upcoming`
               : cell.usage
                 ? `${dateLabel} · new in ${formatNumber(
-                    uncachedInputTokens(
-                      cell.usage.inputTokens,
-                      cell.usage.cachedInputTokens,
-                    ),
-                  )} · context ${formatNumber(
-                    cell.usage.inputTokens,
+                    cell.usage.newInputTokens,
                   )} · out ${formatNumber(
                     cell.usage.outputTokens,
-                  )} · cached ${formatPercent(cacheRate)} (${formatNumber(
+                  )} · peak context ${formatNumber(
+                    cell.usage.contextTokens,
+                  )} (${formatNumber(
                     cell.usage.cachedInputTokens,
-                  )}) · ${formatNumber(cell.usage.requests)} requests`
+                  )} cached) · cache ${formatPercent(
+                    cell.usage.cacheHitRate,
+                  )} · ${formatNumber(cell.usage.requests)} requests`
                 : `${dateLabel} · no usage`;
 
             return (
@@ -347,7 +363,7 @@ export function ActivityHeatmap({
                     className={`text-[12px] font-semibold leading-none tabular-nums ${valueTextClass}`}
                     style={{ paddingBottom: "6px", paddingLeft: "6px" }}
                   >
-                    {formatCompact(value)}
+                    {formatMetricValue(value)}
                   </span>
                 ) : null}
               </div>
@@ -377,19 +393,13 @@ function valueFor(day: DailyUsage | undefined, metric: Metric): number {
   if (!day) return 0;
   switch (metric) {
     case "input":
-      return uncachedInputTokens(day.inputTokens, day.cachedInputTokens);
+      return day.newInputTokens;
     case "output":
       return day.outputTokens;
-    case "cached":
-      return day.cachedInputTokens;
-    case "context":
-      return day.inputTokens;
+    case "utilization":
+      return day.cacheHitRate;
     default:
-      return inferenceTokens(
-        day.inputTokens,
-        day.cachedInputTokens,
-        day.outputTokens,
-      );
+      return day.totalTokens;
   }
 }
 
