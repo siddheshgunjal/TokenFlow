@@ -218,6 +218,7 @@ export const mockSettings: Settings = {
   closeToTray: true,
   widgetAlwaysOnTop: true,
   showWidgetOnStart: false,
+  launchAtLogin: false,
 };
 
 export const mockSettingsView: SettingsView = {
@@ -226,6 +227,8 @@ export const mockSettingsView: SettingsView = {
   deepseekKeySource: "keychain",
   deepseekKeyError: null,
   restartRequired: false,
+  launchAtLoginSupported: true,
+  launchAtLoginError: null,
 };
 
 export const mockDeepSeekStatus: DeepSeekStatus = {

@@ -82,6 +82,10 @@ impl AppState {
             .clone()
     }
 
+    pub fn app_handle(&self) -> AppHandle {
+        self.app.clone()
+    }
+
     pub fn update_settings(&self, settings: Settings) -> Result<(), AppError> {
         settings.save(&self.db)?;
         *self

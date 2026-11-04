@@ -48,6 +48,8 @@ export async function saveSettings(settings: Settings): Promise<SettingsView> {
       deepseekKeySource: "keychain",
       deepseekKeyError: null,
       restartRequired: false,
+      launchAtLoginSupported: true,
+      launchAtLoginError: null,
     };
   }
   return invoke<SettingsView>("save_settings", { settings });

@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("{0}")]
     Secret(String),
 
+    #[error("launch at login: {0}")]
+    Autostart(String),
+
     #[error("Tauri error: {0}")]
     Tauri(#[from] tauri::Error),
 }

@@ -1,3 +1,4 @@
+mod autostart;
 mod commands;
 mod db;
 mod deepseek;
@@ -37,6 +38,12 @@ pub fn run() {
 
             focus_dashboard(app);
         }))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("TokenFlow")
+                .arg(startup::AUTOSTART_ARG)
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let handle = app.handle().clone();
