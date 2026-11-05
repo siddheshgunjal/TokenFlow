@@ -16,6 +16,14 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 
 </div>
 
+<div align="center">
+
+![CI](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/ci.yml?style=for-the-badge&logo=checkmarx&label=CI)
+![Build](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/release.yml?style=for-the-badge&logo=build&label=Build)
+[<img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Fsiddheshgunjal.github.io%2F&style=for-the-badge&logo=htmx">][website]
+
+</div>
+
 ## Features
 
 - Local-only Ollama proxy on `127.0.0.1:11435`, forwarding requests unchanged to the user's Ollama server
@@ -78,3 +86,5 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE) for full text.
+
+[website]: https://siddheshgunjal.github.io/

@@ -5,6 +5,15 @@
 - **Summary**: <description of the changes>
 - **Linked Issue**: <issue number or "none">
 
+## Added
+<new features or additions>
+
+## Changed
+<existing features modified>
+
+## Removed
+<features or elements removed>
+
 ## Test Plan
 
 - **Test plan**: <description of how changes are tested>
