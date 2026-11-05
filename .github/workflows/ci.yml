@@ -49,7 +49,6 @@ jobs:
       - name: Cache Rust workspace
         uses: Swatinem/rust-cache@v2
         with:
-          working-directory: src-tauri
           workspaces: src-tauri
       - name: Format check
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
