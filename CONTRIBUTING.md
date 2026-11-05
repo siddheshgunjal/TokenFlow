@@ -2,7 +2,7 @@
 
 ## Code of conduct
 
-Link to `CODE_OF_CONDUCT.md`.
+Link to [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## Ways to contribute
 
