@@ -1,6 +1,6 @@
 [package]
 name = "tokenflow"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "Local-first desktop analytics for Ollama and DeepSeek usage"
 authors = ["Siddhesh Gunjal"]
 edition = "2021"
