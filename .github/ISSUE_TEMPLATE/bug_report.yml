@@ -1,0 +1,23 @@
+name: Bug Report
+description: File a bug report for TokenFlow
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+
+- **Summary**: <description of the bug>
+- **TokenFlow version**: <version from About/Settings or `VERSION` file>
+- **Install format**: <`.deb`, `.rpm`, AppImage, Flatpak, NSIS, DMG>
+- **OS and version**: <e.g., Ubuntu 22.04, Fedora 38, macOS 13>
+- **Ollama version**: <version or "unknown">
+- **Proxy reachable**: <yes/no whether `http://127.0.0.1:11435` responds>
+- **Steps to reproduce**:
+  1. ...
+  2. ...
+  3. ...
+- **Expected behavior**: ...
+- **Actual behavior**: ...
+- **Logs** (`RUST_LOG=tokenflow=info` with secrets removed):
+  ```
+  ...
+  ```
+- **Confirmation**: No API keys or personal data included in this report.

@@ -1,4 +1,4 @@
-# Packaging and distribution
+# Packaging and local builds
 
 TokenFlow ships six installable formats from one source tree. All release
 assets are produced by GitHub Actions from the release tag; the same commands
@@ -23,55 +23,21 @@ glibc 2.35.
 
 ---
 
-## Versioning
-
-The repository root contains a single plain-semver `VERSION` file:
-
-```text
-0.1.0
-```
-
-`npm run version:sync` propagates it to `package.json`, `package-lock.json`,
-`src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`,
-and the tag in the release Flatpak manifest. `npm run version:check` fails if
-any derived value is stale and, with `--tag vX.Y.Z`, verifies the release tag
-matches `VERSION`. The release tag is always `v$(cat VERSION)`.
-
-The `prebuild` hook runs `version:sync` automatically before `npm run build`,
-and every `bundle:*` script runs it before calling `tauri build`.
-
-To cut a release:
-
-```bash
-# 1. Edit VERSION, then propagate it.
-npm run version:sync
-
-# 2. Optionally record the release in the AppStream metadata.
-node scripts/prepare-flatpak-release.mjs
-
-# 3. Commit, tag, and publish the GitHub Release.
-git add VERSION package.json package-lock.json src-tauri/Cargo.toml \
-  src-tauri/Cargo.lock src-tauri/tauri.conf.json \
-  flatpak/io.github.siddheshgunjal.TokenFlow.yml \
-  flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml
-git commit -m "release: v$(cat VERSION)"
-git tag "v$(cat VERSION)"
-git push origin main "v$(cat VERSION)"
-```
-
-Publishing the release triggers `.github/workflows/release.yml`. The workflow
-does not create the release; it attaches assets to the release that is already
-published.
+Versioning is documented in `[RELEASING.md](../RELEASING.md)`.
 
 ---
 
-## Build from source
+Build from source
+
+TokenFlow ships six installable formats from one source tree. All release
+assets are produced by GitHub Actions from the release tag; the same commands
+work locally when the matching toolchain is available.
 
 ### Common requirements
 
 - Rust 1.90+ and Cargo.
 - Node.js 20+ and npm 10+ (CI uses Node 22).
-- Platform build dependencies from the [README](../README.md#prerequisites).
+- Platform build dependencies from the [CONTRIBUTING.md](../CONTRIBUTING.md#development-setup).
 - Enough disk space: a clean Tauri build plus bundles needs roughly 4–6 GB.
 - `npm ci` or `npm install` once before running bundle scripts.
 
@@ -111,7 +77,7 @@ build and run AppImages on Ubuntu 22.04.
 
 ### Windows
 
-- Microsoft C++ Build Tools with the “Desktop development with C++” workload.
+- Microsoft C++ Build Tools with the "Desktop development with C++" workload.
 - Rust MSVC toolchain and the target for the architecture being built.
 - Node.js 20+.
 - WebView2 (preinstalled on Windows 10/11; the installer bootstrapper is the
@@ -129,7 +95,7 @@ Install Rust and Node.js. The minimum supported macOS version is 10.15.
 
 ---
 
-## Bundle commands
+### Bundle commands
 
 Run these from the repository root. They write Tauri bundles under
 `src-tauri/target/<triple>/release/bundle/`; the collection scripts then copy
@@ -148,6 +114,8 @@ them to `release/` with the normalized names above.
 The Linux and Windows scripts assume the target triple is installed and the
 host can actually link for it. Cross-compiling aarch64 on x86_64 is possible in
 principle but is not wired up here; use a native ARM64 runner, VM, or machine.
+
+---
 
 Collect and verify the normalized files:
 
@@ -168,9 +136,9 @@ sanity check for the bundle command.
 
 ---
 
-## Install from a local build
+### Install from a local build
 
-### RPM (Fedora, RHEL, openSUSE)
+#### RPM (Fedora, RHEL, openSUSE)
 
 ```bash
 sudo dnf install ./release/TokenFlow-0.1.0-linux-x86_64.rpm
@@ -183,7 +151,7 @@ feature still pulls the legacy libappindicator crate into the Linux binary, so
 rpmbuild may also list `libappindicator3.so.1()(64bit)`. The Linux tray itself
 is `ksni` and does not load that library.
 
-### DEB (Debian, Ubuntu)
+#### DEB (Debian, Ubuntu)
 
 ```bash
 sudo apt install ./release/TokenFlow-0.1.0-linux-x86_64.deb
@@ -192,7 +160,7 @@ sudo apt install ./release/TokenFlow-0.1.0-linux-x86_64.deb
 The DEB declares its GTK, WebKitGTK, `libxdo`, and `libdbus` dependencies
 explicitly.
 
-### AppImage
+#### AppImage
 
 ```bash
 chmod +x ./release/TokenFlow-0.1.0-linux-x86_64.AppImage
@@ -203,7 +171,7 @@ AppImages bundle most native libraries, but the app still talks to the host's
 Secret Service over D-Bus and needs a working WebKitGTK stack. If the app fails
 to start, run it with `--appimage-extract-and-run` to rule out FUSE.
 
-### Flatpak
+#### Flatpak
 
 The bundle references `org.gnome.Platform//51`. Install the runtime once, then
 install the local bundle:
@@ -216,9 +184,9 @@ flatpak install --user ./release/TokenFlow-0.1.0-linux-x86_64.flatpak
 flatpak run io.github.siddheshgunjal.TokenFlow
 ```
 
-Building the Flatpak itself is covered in [`flatpak.md`](flatpak.md).
+Building the Flatpak itself is covered in [`flatpak/README.md`](../flatpak/README.md).
 
-### Windows
+#### Windows
 
 Run `TokenFlow-<version>-windows-x86_64-setup.exe` and follow the NSIS
 installer. The binary is not code-signed, so SmartScreen may show a warning:
@@ -229,7 +197,7 @@ installer. The binary is not code-signed, so SmartScreen may show a warning:
 The installer uses the WebView2 download bootstrapper, so a first install can
 require network access when WebView2 is missing.
 
-### macOS
+#### macOS
 
 Open the DMG and drag **TokenFlow** to **Applications**. The app is ad-hoc
 signed and not notarized, so Gatekeeper blocks the first launch by default:
@@ -238,15 +206,15 @@ signed and not notarized, so Gatekeeper blocks the first launch by default:
    Alternatively use **System Settings → Privacy & Security → Open Anyway**.
 2. If macOS reports the app as damaged, clear the quarantine attribute:
 
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/TokenFlow.app
-   ```
+```bash
+xattr -dr com.apple.quarantine /Applications/TokenFlow.app
+```
 
-3. Verify the ad-hoc signature:
+Verify the ad-hoc signature:
 
-   ```bash
-   codesign --verify --deep --strict --verbose=2 /Applications/TokenFlow.app
-   ```
+```bash
+codesign --verify --deep --strict --verbose=2 /Applications/TokenFlow.app
+```
 
 Each fresh download can be quarantined again, so the workaround is per
 installation. The build is not notarized; do not describe it that way in
@@ -254,46 +222,7 @@ release notes.
 
 ---
 
-## GitHub Actions release workflow
-
-`.github/workflows/release.yml` runs on `release: published` and on
-`workflow_dispatch`.
-
-| Job | Runner | Output |
-| --- | --- | --- |
-| `preflight` | `ubuntu-24.04` | Validates `VERSION` and the tag; adds the release-body note |
-| `linux` matrix | `ubuntu-22.04`, `ubuntu-22.04-arm` | `.deb`, `.rpm`, AppImage |
-| `windows` matrix | `windows-2025`, `windows-11-arm` | NSIS `.exe` |
-| `macos` matrix | `macos-15-intel`, `macos-15` | `.dmg`, ad-hoc signed |
-| `flatpak` matrix | `ubuntu-24.04`, `ubuntu-24.04-arm` | `.flatpak` |
-| `flathub-manifest` | `ubuntu-24.04` | Future Flathub manifest as a workflow artifact |
-| `publish` | `ubuntu-24.04` | `SHA256SUMS` plus all assets attached to the release |
-
-All build jobs run in parallel with `fail-fast: false`. The publish job runs
-only when every build job succeeds and a release tag was supplied.
-
-While the assets are being built, the release body contains:
-
-> Installers are built automatically by GitHub Actions and will appear below
-> shortly.
-
-`scripts/release-notes.mjs` adds this sentence from the preflight job and
-removes it after the upload. The block is wrapped in HTML comment sentinels, so
-re-runs are idempotent and the rest of the release notes is preserved.
-
-`workflow_dispatch` with the `tag` input rebuilds and re-uploads assets for an
-existing release using `gh release upload --clobber`. Without a tag it only
-produces workflow artifacts, which is the dry-run path.
-
-Verify a download with:
-
-```bash
-sha256sum -c SHA256SUMS
-```
-
----
-
-## Platform caveats
+### Platform caveats
 
 | Topic | Current behavior | Follow-up |
 | --- | --- | --- |

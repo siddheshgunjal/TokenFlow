@@ -1,5 +1,14 @@
 # TokenFlow Brand Guidelines
 
+## Scope
+
+Applies to the desktop UI, website, README, release assets, and social previews.
+
+- Tokens in `tailwind.config.ts` are the implementation source of truth.
+- Update this file and `tailwind.config.ts` together.
+
+---
+
 ## Logo
 
 - **Primary mark**: 3D teal `F` mark, transparent background
@@ -27,8 +36,15 @@
 
 - **Copy**: `LOCAL | SECURE | OPEN-SOURCE`
 - **Size**: 12px, 600, uppercase, `tracking-[0.16em]`, `text-muted`
-- **Usage**: Sidebar shows `LOCAL ANALYTICS` with full tagline in `title` attribute; full tagline in README, `docs/branding.md`, and About/brand surfaces
+- **Usage**: Sidebar shows `LOCAL ANALYTICS` with full tagline in `title` attribute; full tagline in README, `BRANDING.md`, and About/brand surfaces
 - **Do not**: use as replacement for functional descriptions such as "Ollama + DeepSeek usage"
+
+## Website usage
+
+- Favicon and touch-icon expectations.
+- Open Graph / social preview image requirements.
+- Dark-only presentation.
+- Link to `website/README.md` for placement rules.
 
 ## Color Palette
 
@@ -122,11 +138,11 @@
   | `src-tauri/icons/tray-64.png` | 64 | Full-color |
   | `src-tauri/icons/tray-128.png` | 128 | Full-color |
   | `src/assets/logo-mark.png` | 512 | Full-color |
-  | `public/favicon-16.png` | 16 | Silhouette |
-  | `public/favicon-32.png` | 32 | Silhouette |
-  | `public/favicon-192.png` | 192 | Full-color |
-  | `public/favicon-512.png` | 512 | Full-color |
-  | `public/apple-touch-icon.png` | 180 | Full-color |
+  | `public/favicon-16.png` | 16 | Website asset to be generated → `website/public/` |
+  | `public/favicon-32.png` | 32 | Website asset to be generated → `website/public/` |
+  | `public/favicon-192.png` | 192 | Website asset to be generated → `website/public/` |
+  | `public/favicon-512.png` | 512 | Website asset to be generated → `website/public/` |
+  | `public/apple-touch-icon.png` | 180 | Website asset to be generated → `website/public/` |
 
 - **Acceptance checks**:
   - Every generated PNG is `RGBA`
@@ -159,5 +175,11 @@
 
 ## Version
 
-- **Generated**: 2026-11-04
-- **Source**: TokenFlow branding rebrand — implementation handover
+- **Change control**
+
+- Token changes must be made in `tailwind.config.ts` first, then mirrored
+  here.
+- Icon changes must be regenerated with `npm run icons`.
+- Last reviewed: 2026-11-05.
+
+Do not claim a generated date if the content is not regenerated.

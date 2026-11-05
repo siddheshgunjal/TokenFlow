@@ -1,4 +1,4 @@
-# Flathub readiness
+# Flathub submission
 
 Status: **prepared, not submitted.** There is no Flathub account yet, so no
 workflow creates or updates a pull request in the Flathub repository. The
@@ -16,12 +16,12 @@ without planning a migration.
 
 | Item | Location |
 | --- | --- |
-| Release manifest, pinned to the GitHub tag | `flatpak/io.github.siddheshgunjal.TokenFlow.yml` |
-| Development manifest, `type: dir` source | `flatpak/io.github.siddheshgunjal.TokenFlow.dev.yml` |
-| Desktop entry | `flatpak/io.github.siddheshgunjal.TokenFlow.desktop` |
-| AppStream metadata | `flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml` |
-| Offline Cargo sources | `flatpak/flatpak-cargo-sources.json` |
-| Offline npm sources | `flatpak/node-sources.json` |
+| Release manifest, pinned to the GitHub tag | `io.github.siddheshgunjal.TokenFlow.yml` |
+| Development manifest, `type: dir` source | `io.github.siddheshgunjal.TokenFlow.dev.yml` |
+| Desktop entry | `io.github.siddheshgunjal.TokenFlow.desktop` |
+| AppStream metadata | `io.github.siddheshgunjal.TokenFlow.metainfo.xml` |
+| Offline Cargo sources | `flatpak-cargo-sources.json` |
+| Offline npm sources | `node-sources.json` |
 | Future submission manifest renderer | `scripts/prepare-flatpak-release.mjs --render-flathub` |
 | Local Flatpak build | `scripts/build-flatpak.sh` |
 
@@ -83,11 +83,11 @@ Pass `--commit <sha>` explicitly if the tag is not available locally.
    - `runtime-version` and the SDK extension branches are mutually compatible.
 6. **Run the checks:**
 
-   ```bash
-   appstreamcli validate --no-net flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml
-   flatpak-builder-lint manifest io.github.siddheshgunjal.TokenFlow.yml
-   flatpak-builder-lint builddir flatpak/build
-   ```
+```bash
+appstreamcli validate --no-net flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml
+flatpak-builder-lint manifest io.github.siddheshgunjal.TokenFlow.yml
+flatpak-builder-lint builddir flatpak/build
+```
 
 7. **Open the pull request** against `flathub/flathub` with a short
    description and the permission rationale below.
@@ -119,8 +119,6 @@ Deliberately absent:
 - `--filesystem=~/.local/share/io.github.siddheshgunjal.TokenFlow` would only be
   needed if a non-Flatpak data import is added later.
 
-See [`flatpak.md`](flatpak.md) for the full sandbox and keychain behavior.
-
 ---
 
 ## Flathub build constraints
@@ -135,3 +133,9 @@ See [`flatpak.md`](flatpak.md) for the full sandbox and keychain behavior.
   on Linux, so there is no system SQLite or OpenSSL coupling.
 - The Flatpak tray uses `FLATPAK_ID` as the icon name instead of a host path;
   no filesystem permission is needed for the tray.
+
+---
+
+## Related
+
+[[../README.md]] and [[../RELEASING.md]].

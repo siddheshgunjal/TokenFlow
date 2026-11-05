@@ -1,4 +1,4 @@
-# Flatpak packaging
+# Flatpak
 
 TokenFlow builds and ships as a single-file `.flatpak` bundle. The application
 ID is **`io.github.siddheshgunjal.TokenFlow`**, matching the Tauri identifier,
@@ -12,11 +12,10 @@ flatpak/
 ├── io.github.siddheshgunjal.TokenFlow.desktop
 ├── io.github.siddheshgunjal.TokenFlow.metainfo.xml
 ├── flatpak-cargo-sources.json                      # generated offline Cargo sources
-├── node-sources.json                               # generated offline npm sources
+└── node-sources.json                               # generated offline npm sources
 ```
 
-The distribution plan is in [`distribution-plan.md`](distribution-plan.md), and
-the future Flathub submission is documented in [`flathub.md`](flathub.md).
+The future Flathub submission is documented in [FLATHUB.md](../flatpak/FLATHUB.md).
 
 ---
 
@@ -27,9 +26,7 @@ Prerequisites:
 ```bash
 # Fedora
 sudo dnf install flatpak flatpak-builder
-```
 
-```bash
 # Debian / Ubuntu
 sudo apt install flatpak flatpak-builder
 ```
@@ -85,7 +82,9 @@ bash scripts/update-flatpak-sources.sh
 The script pins `flatpak-builder-tools` to commit
 `9d86d336a39b9af38b86f114b6ce5820fe260f91` and requires `uv`.
 
-### Install and run
+---
+
+## Install and run
 
 ```bash
 flatpak install --user ./release/TokenFlow-0.1.0-linux-x86_64.flatpak
@@ -167,10 +166,10 @@ Do **not** add:
 
 `tray.rs` uses `ksni` directly. Inside Flatpak it calls
 `disable_dbus_name(true)`: the sandbox cannot own the process-derived
-`org.kde.StatusNotifierItem-<pid>-<id>` name, so `ksni` registers with the host
-watcher under its unique connection name. That is the same supported pattern
-Qt applications use, and the host can still call `Activate`, read properties,
-and open the DBusMenu.
+`org.kde.StatusNotifierItem-<pid>-<id>` name, so `ksni` registers with the
+host watcher under its unique connection name. That is the same supported
+pattern Qt applications use, and the host can still call `Activate`, read
+properties, and open the DBusMenu.
 
 Double-click activation arrives through the standard `Activate` method; the
 small menu provides **Open TokenFlow** and **Quit TokenFlow**. The widget anchor
@@ -267,22 +266,22 @@ Run these on the host that runs the Flatpak:
    stops.
 5. Simulate a missing permission:
 
-   ```bash
-   flatpak override --user --no-talk-name=org.freedesktop.secrets \
-     io.github.siddheshgunjal.TokenFlow
-   ```
+```bash
+flatpak override --user --no-talk-name=org.freedesktop.secrets \
+  io.github.siddheshgunjal.TokenFlow
+```
 
-   Verify the save fails with the Flatpak-aware error, no SQLite fallback is
-   created, and **Retry keychain** works after restoring the permission.
+Verify the save fails with the Flatpak-aware error, no SQLite fallback is
+created, and **Retry keychain** works after restoring the permission.
 
 6. `flatpak run --env=DEEPSEEK_API_KEY=... io.github.siddheshgunjal.TokenFlow`:
    verify the environment key is active and no keychain write is required.
 7. On the host, verify the shared credential:
 
-   ```bash
-   secret-tool search service io.github.siddheshgunjal.TokenFlow \
-     username deepseek-api-key
-   ```
+```bash
+secret-tool search service io.github.siddheshgunjal.TokenFlow \
+  username deepseek-api-key
+```
 
 8. Verify the tray icon appears on GNOME with the AppIndicator extension and on
    KDE. Confirm the icon is the embedded TokenFlow pixmap, double-click opens
@@ -316,5 +315,12 @@ account and no workflow creates a pull request against `flathub/flathub`.
 Screenshots are deliberately deferred and are required before a submission.
 The release workflow renders a tag-and-commit-pinned submission manifest and
 uploads it as the `flathub-manifest-v<version>` workflow artifact. See
-[`flathub.md`](flathub.md) for the submission checklist and permission
+[FLATHUB.md](../flatpak/FLATHUB.md) for the submission checklist and permission
 rationale.
+
+---
+
+## Related
+
+Release workflow: [`RELEASING.md`](../RELEASING.md). Packaging matrix:
+[`packaging/README.md`](../packaging/README.md).
