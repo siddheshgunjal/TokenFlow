@@ -1,6 +1,20 @@
 # TokenFlow
 
-<!--logo--><div style="text-align: center;"><img src="src-tauri/icons/512x512.png" alt="TokenFlow logo" width="128" /><br /<bold>LOCAL | SECURE | OPEN-SOURCE<bold /><br />Local-first desktop analytics for Ollama and DeepSeek usage</div>
+<div align="center">
+
+![TokenFlow Logo](src-tauri/icons/128x128.png)
+
+</div>
+<div align="center">
+
+**LOCAL | SECURE | OPEN-SOURCE**
+
+</div>
+<div align="center">
+
+Local-first desktop analytics for Ollama and DeepSeek usage
+
+</div>
 
 ## Features
 
