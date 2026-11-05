@@ -104,7 +104,7 @@ function rangeFor(range: ChartRange, monthOffset: number): RangeBounds {
       month: "short",
       day: "numeric",
     }),
-    axis: ["12am", "6am", "12pm", "6pm"],
+    axis: ["12am", "6am", "12pm", "6pm", "11:59pm"],
   };
 }
 
