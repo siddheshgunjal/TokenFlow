@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![TokenFlow Logo](src-tauri/icons/256x256.png)
+![TokenFlow Logo](src/assets/banner.png)
 
 </div>
 <div align="center">
