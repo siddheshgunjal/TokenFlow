@@ -1,0 +1,9 @@
+blank_issues: false
+contact: ""
+comment_interval: 0
+duplicate:
+  missing: ""
+  days: 30
+template:
+  - bug_report.yml
+  - feature_request.yml

@@ -1,0 +1,11 @@
+name: Feature Request
+description: Request a new feature or improvement for TokenFlow
+title: "[Feature] "
+labels: ["feature", "triage"]
+body:
+
+- **Problem or use case**: <description of the problem or use case>
+- **Proposed solution**: <description of the proposed solution>
+- **Alternatives considered**: <description of any alternatives considered>
+- **Scope**: <UI, proxy, storage, packaging, or docs>
+- **Willingness to contribute**: <e.g., I can help with implementation, testing, or documentation>
