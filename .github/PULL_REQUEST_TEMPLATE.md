@@ -6,16 +6,13 @@
 - **Linked Issue**: <issue number or "none">
 
 ## Added
-
-- **Added**: <new features or additions>
+<new features or additions>
 
 ## Changed
+<existing features modified>
 
-- **Changed**: <existing features modified>
-
-## removed
-
-- **removed**: <features or elements removed>
+## Removed
+<features or elements removed>
 
 ## Test Plan
 
