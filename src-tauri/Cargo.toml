@@ -2,11 +2,14 @@
 name = "tokenflow"
 version = "0.1.0"
 description = "Local-first desktop analytics for Ollama and DeepSeek usage"
-authors = ["TokenFlow contributors"]
+authors = ["Siddhesh Gunjal"]
 edition = "2021"
 rust-version = "1.90"
 license = "GPL-3.0-only"
 default-run = "tokenflow"
+repository = "https://github.com/siddheshgunjal/TokenFlow.git"
+homepage = "https://github.com/siddheshgunjal/TokenFlow#readme"
+bugs = "https://github.com/siddheshgunjal/TokenFlow/issues"
 
 [lib]
 name = "tokenflow_lib"
