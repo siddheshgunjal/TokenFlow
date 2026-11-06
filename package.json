@@ -29,6 +29,7 @@
     "icons": "python3 scripts/generate_icons.py",
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/check-release-version.mjs",
+    "flatpak:sources:check": "node scripts/check-flatpak-sources.mjs",
     "bundle:linux:x64": "npm run version:sync && tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage",
     "bundle:linux:arm64": "npm run version:sync && tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm,appimage",
     "bundle:windows:x64": "npm run version:sync && tauri build --target x86_64-pc-windows-msvc --bundles nsis",
