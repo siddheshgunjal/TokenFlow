@@ -35,7 +35,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/siddheshgunjal/TokenFlow.git
-        tag: v0.1.0-alpha.1
+        tag: v0.1.0+alpha.1
       - flatpak-cargo-sources.json
       - node-sources.json
     build-commands:
