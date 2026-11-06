@@ -25,6 +25,17 @@ jobs:
       - name: Version check
         run: npm run version:check
 
+  flatpak-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check generated Flatpak Cargo sources
+        run: npm run flatpak:sources:check
+
   rust:
     runs-on: ubuntu-latest
     steps:
