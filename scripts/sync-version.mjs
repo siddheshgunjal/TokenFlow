@@ -33,7 +33,9 @@ function replaceOnce(content, pattern, replacement, label) {
 
 const version = read("VERSION").trim();
 if (!VERSION_RE.test(version)) {
-  console.error(`VERSION must contain a plain semantic version, got: ${JSON.stringify(version)}`);
+  console.error(
+    `VERSION must contain a plain semantic version, got: ${JSON.stringify(version)}`,
+  );
   process.exit(1);
 }
 
@@ -50,7 +52,7 @@ function queue(relativePath, nextContent) {
   const current = read("package.json");
   const next = replaceOnce(
     current,
-    /(\n  "version": ")[^"]+(")/,
+    /(\r?\n  "version": ")[^"]+(")/,
     `$1${version}$2`,
     "package.json",
   );
@@ -62,13 +64,13 @@ function queue(relativePath, nextContent) {
   const current = read("package-lock.json");
   let next = replaceOnce(
     current,
-    /(\n  "name": "tokenflow",\n  "version": ")[^"]+(")/,
+    /(\r?\n  "name": "tokenflow",\r?\n  "version": ")[^"]+(")/,
     `$1${version}$2`,
     "package-lock.json root",
   );
   next = replaceOnce(
     next,
-    /(\n    "": \{\n      "name": "tokenflow",\n      "version": ")[^"]+(")/,
+    /(\r?\n    "": \{\r?\n      "name": "tokenflow",\r?\n      "version": ")[^"]+(")/,
     `$1${version}$2`,
     "package-lock.json packages entry",
   );
@@ -80,7 +82,7 @@ function queue(relativePath, nextContent) {
   const current = read("src-tauri/Cargo.toml");
   const next = replaceOnce(
     current,
-    /(\[package\][\s\S]*?\nversion = ")[^"]+(")/,
+    /(\[package\][\s\S]*?\r?\nversion = ")[^"]+(")/,
     `$1${version}$2`,
     "src-tauri/Cargo.toml",
   );
@@ -92,7 +94,7 @@ function queue(relativePath, nextContent) {
   const current = read("src-tauri/Cargo.lock");
   const next = replaceOnce(
     current,
-    /(\[\[package\]\]\nname = "tokenflow"\nversion = ")[^"]+(")/,
+    /(\[\[package\]\]\r?\nname = "tokenflow"\r?\nversion = ")[^"]+(")/,
     `$1${version}$2`,
     "src-tauri/Cargo.lock",
   );
@@ -104,7 +106,7 @@ function queue(relativePath, nextContent) {
   const current = read("src-tauri/tauri.conf.json");
   const next = replaceOnce(
     current,
-    /(\n  "version": ")[^"]+(")/,
+    /(\r?\n  "version": ")[^"]+(")/,
     `$1${version}$2`,
     "src-tauri/tauri.conf.json",
   );
@@ -138,6 +140,8 @@ for (const { relativePath, nextContent } of updates) {
 }
 
 if (CHECK && failed) {
-  console.error(`Run \`npm run version:sync\` to update files to VERSION=${version}.`);
+  console.error(
+    `Run \`npm run version:sync\` to update files to VERSION=${version}.`,
+  );
   process.exit(1);
 }

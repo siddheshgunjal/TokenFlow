@@ -51,12 +51,15 @@ on this repository:
 
 ```bash
 sudo dnf install -y webkit2gtk4.1-devel openssl-devel dbus-devel \
-  libxdo-devel librsvg2-devel rpm-build
+  libxdo-devel librsvg2-devel libappindicator-gtk3-devel rpm-build
 sudo dnf group install -y "c-development"
 ```
 
-The Linux tray is implemented in Rust with `ksni`, so no distro tray
-development package is required.
+The Linux tray at runtime is implemented with `ksni`, but Tauri's bundler still
+probes pkg-config for an appindicator library because the `tray-icon` Cargo
+feature is enabled. Without the development package, `tauri build` panics with
+`Can't detect any appindicator library` while creating the `.deb`, `.rpm`, or
+AppImage.
 
 `.deb` bundling on Fedora additionally needs the dpkg tools (`sudo dnf install
 dpkg`). AppImage bundling runs linuxdeploy and needs FUSE; install `fuse` and
@@ -68,8 +71,8 @@ validated on Fedora; CI builds them on Ubuntu.
 ```bash
 sudo apt update
 sudo apt install -y build-essential curl wget file patchelf rpm dpkg-dev \
-  libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev libxdo-dev \
-  libdbus-1-dev libfuse2
+  libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+  librsvg2-dev libssl-dev libxdo-dev libdbus-1-dev libfuse2
 ```
 
 `rpm` is required to build the `.rpm` even on Ubuntu. `libfuse2` is needed to

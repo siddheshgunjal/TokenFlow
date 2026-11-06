@@ -82,6 +82,9 @@ bash scripts/update-flatpak-sources.sh
 The script pins `flatpak-builder-tools` to commit
 `9d86d336a39b9af38b86f114b6ce5820fe260f91` and requires `uv`.
 
+CI runs `npm run flatpak:sources:check` on every pull request. It fails when
+`flatpak-cargo-sources.json` no longer matches `src-tauri/Cargo.lock`.
+
 ---
 
 ## Install and run

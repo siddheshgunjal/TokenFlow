@@ -19,14 +19,18 @@ To cut a release:
 # 1. Edit VERSION, then propagate it.
 npm run version:sync
 
-# 2. Optionally record the release in the AppStream metadata.
+# 2. If either lockfile changed, refresh the committed Flatpak sources.
+bash scripts/update-flatpak-sources.sh
+
+# 3. Optionally record the release in the AppStream metadata.
 node scripts/prepare-flatpak-release.mjs
 
-# 3. Commit, tag, and publish the GitHub Release.
+# 4. Commit, tag, and publish the GitHub Release.
 git add VERSION package.json package-lock.json src-tauri/Cargo.toml \
   src-tauri/Cargo.lock src-tauri/tauri.conf.json \
   flatpak/io.github.siddheshgunjal.TokenFlow.yml \
-  flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml
+  flatpak/io.github.siddheshgunjal.TokenFlow.metainfo.xml \
+  flatpak/flatpak-cargo-sources.json flatpak/node-sources.json
 git commit -m "release: v$(cat VERSION)"
 git tag "v$(cat VERSION)"
 git push origin main "v$(cat VERSION)"
@@ -53,6 +57,7 @@ sha256sum -c SHA256SUMS
 - Update `VERSION` (edit the `VERSION` file).
 - Update `CHANGELOG.md` with new version entries under `[Unreleased]` heading.
 - Run `npm run version:sync` to propagate VERSION to all derived files.
+- If either lockfile changed, run `bash scripts/update-flatpak-sources.sh` and commit the regenerated Flatpak sources.
 - Optionally run `node scripts/prepare-flatpak-release.mjs` to render the Flathub submission manifest.
 - Commit, tag, and push the GitHub Release (git add VERSION + dependent files; git commit -m "release: vX.Y.Z"; git tag vX.Y.Z; git push origin main vX.Y.Z).
 - Publish the GitHub Release (web UI or `gh release create vX.Y.Z`); the release workflow attaches assets automatically; it does not create the release itself.
