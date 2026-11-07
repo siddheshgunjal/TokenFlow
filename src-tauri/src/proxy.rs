@@ -60,7 +60,7 @@ async fn run(state: AppState) -> Result<(), Box<dyn std::error::Error + Send + S
         .build()?;
 
     let app = Router::new()
-        .route("/tokenflow/health", get(health))
+        .route("/health", get(health))
         .fallback(any(proxy_handler))
         .layer(cors_layer())
         .with_state(ProxyContext {

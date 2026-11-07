@@ -108,7 +108,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 ### Manual test matrix
 
-- Proxy health: `curl http://127.0.0.1:11435/tokenflow/health`
+- Proxy health: `curl http://127.0.0.1:11435/health`
 - Streaming and non-streaming Ollama requests; cached-count variants
 - OpenAI-compatible `/v1/chat/completions`
 - Tray interactions on Windows/macOS/X11/Wayland
