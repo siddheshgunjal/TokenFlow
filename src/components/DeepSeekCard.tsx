@@ -1,38 +1,39 @@
-import { useState } from "react";
+import { Suspense, lazy } from "react";
 
 import { classNames } from "../lib/format";
-import { refreshDeepSeekBalance } from "../lib/api";
 import { formatMoney, formatRelative } from "../lib/format";
 import type { BalanceSnapshot } from "../lib/types";
-import { BalanceChart } from "./BalanceChart";
 import { Icon } from "./Icons";
+
+// The balance chart is only shown when a balance exists; splitting it out of
+// the dashboard bundle keeps the card light on first paint.
+const BalanceChart = lazy(() =>
+  import("./BalanceChart").then((module) => ({
+    default: module.BalanceChart,
+  })),
+);
 
 export function DeepSeekCard({
   balance,
   monthOffset,
   onRefreshed,
   onOpenSettings,
+  error,
+  refreshing = false,
 }: {
   balance: BalanceSnapshot | null;
   monthOffset: number;
   onRefreshed: () => void;
   onOpenSettings: () => void;
+  /** Non-fatal DeepSeek error surfaced by the core snapshot refresh. */
+  error: string | null;
+  /** Shared refresh-in-progress flag from the core snapshot hook. */
+  refreshing?: boolean;
 }) {
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleRefresh() {
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      await refreshDeepSeekBalance();
-      onRefreshed();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setRefreshing(false);
-    }
+  function handleRefresh() {
+    // The unified refresh goes through `refresh_core`, which performs at
+    // most one DeepSeek network call and rebuilds the core snapshot.
+    onRefreshed();
   }
 
   const needsKey = error?.toLowerCase().includes("api key");
@@ -94,11 +95,13 @@ export function DeepSeekCard({
           </div>
 
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
-            <BalanceChart
-              currency={balance.currency}
-              monthOffset={monthOffset}
-              refreshKey={balance.createdAt}
-            />
+            <Suspense fallback={<BalanceChartSkeleton />}>
+              <BalanceChart
+                currency={balance.currency}
+                monthOffset={monthOffset}
+                refreshKey={balance.createdAt}
+              />
+            </Suspense>
           </div>
         </>
       ) : (
@@ -144,5 +147,14 @@ export function DeepSeekCard({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function BalanceChartSkeleton() {
+  return (
+    <div className="h-full min-h-[160px] animate-pulse rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+      <div className="h-2.5 w-24 rounded bg-white/[0.06]" />
+      <div className="mt-4 h-24 w-full rounded bg-white/[0.04]" />
+    </div>
   );
 }

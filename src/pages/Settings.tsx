@@ -13,7 +13,6 @@ import {
   getDeepSeekStatus,
   getSettings,
   openExternal,
-  refreshDeepSeekBalance,
   retryDeepSeekKeychain,
   saveDeepSeekApiKey,
   saveSettings,
@@ -151,9 +150,8 @@ export function SettingsPage({ onSaved }: { onSaved: () => void }) {
           ? "The OS keychain is still unavailable."
           : "OS keychain connected.",
       );
-      if (next.hasDeepseekApiKey) {
-        await refreshDeepSeekBalance();
-      }
+      // The core refreshes the balance and pushes a new snapshot; we only
+      // need to re-read the status for this panel.
       setDeepseek(await getDeepSeekStatus());
       onSaved();
     } catch (err) {
@@ -609,7 +607,7 @@ Model: llama3.2`,
             />
             <Toggle
               label="Close to tray"
-              description="Closing the dashboard hides it; use the tray menu to quit."
+              description="Closing the dashboard releases its renderer; TokenFlow keeps running in the tray."
               checked={form.closeToTray}
               onChange={(value) => patch("closeToTray", value)}
             />

@@ -1,18 +1,40 @@
 use std::{
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering},
+        Arc, Mutex, RwLock,
+    },
     time::Duration,
 };
 
-use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::broadcast;
+use tauri::{AppHandle, Manager};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
     db::Db,
     error::AppError,
-    models::{MetricEvent, ProxyStatus},
+    models::ProxyStatus,
     secrets::{self, KeySource, KeyringStore, Secret, SecretState},
     settings::Settings,
+    snapshot::SnapshotService,
 };
+
+/// Serializes DeepSeek provider refreshes so that double-clicks and two open
+/// windows produce one network call, not two. The lock and timestamp are
+/// cloned through `Arc`s so the coordinator itself stays cheaply `Clone`.
+#[derive(Clone)]
+pub struct RefreshCoordinator {
+    pub lock: Arc<AsyncMutex<()>>,
+    pub last_refresh_at: Arc<AtomicI64>,
+}
+
+impl RefreshCoordinator {
+    pub fn new() -> Self {
+        Self {
+            lock: Arc::new(AsyncMutex::new(())),
+            last_refresh_at: Arc::new(AtomicI64::new(0)),
+        }
+    }
+}
 
 /// Where the widget should be anchored.
 ///
@@ -24,17 +46,82 @@ pub enum TrayAnchor {
     Physical(f64, f64),
 }
 
+/// Per-window visibility plus the "renderer suspended" flag.
+///
+/// On Linux the windows and their webviews are created once and kept for the
+/// app's lifetime: closing a window hides it and kills its web process, and the
+/// next reveal reloads the page. That avoids the per-cycle window/webview churn
+/// that leaks UI-side memory in wry/Tauri. Other platforms still destroy and
+/// recreate the windows, so the suspended flag stays false there.
+#[derive(Clone)]
+pub struct WindowFlags {
+    visible: Arc<AtomicBool>,
+    suspended: Arc<AtomicBool>,
+    visible_count: Arc<AtomicU32>,
+}
+
+impl WindowFlags {
+    fn new(visible_count: Arc<AtomicU32>) -> Self {
+        Self {
+            visible: Arc::new(AtomicBool::new(false)),
+            suspended: Arc::new(AtomicBool::new(false)),
+            visible_count,
+        }
+    }
+
+    /// Marks the window shown/hidden, keeping the shared visible-window count
+    /// accurate even when this is called repeatedly with the same value.
+    pub fn set_visible(&self, visible: bool) {
+        let was = self.visible.swap(visible, Ordering::SeqCst);
+        if was == visible {
+            return;
+        }
+
+        if visible {
+            self.visible_count.fetch_add(1, Ordering::SeqCst);
+        } else {
+            self.visible_count.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    pub fn set_suspended(&self, suspended: bool) {
+        self.suspended.store(suspended, Ordering::SeqCst);
+    }
+
+    /// Clears the suspended flag and reports whether the window needs a reload.
+    pub fn take_suspended(&self) -> bool {
+        self.suspended.swap(false, Ordering::SeqCst)
+    }
+}
+
 /// Shared state injected into Tauri commands and background workers.
 #[derive(Clone)]
 pub struct AppState {
     pub db: Db,
-    pub events: broadcast::Sender<MetricEvent>,
+    /// The single core-owned snapshot path. All reads and rebuilds go through
+    /// this; the UI never queries the database directly.
+    pub snapshots: SnapshotService,
+    /// Single-flight guard for DeepSeek provider refreshes.
+    pub refresh: RefreshCoordinator,
     pub deepseek_http: reqwest::Client,
+    /// Lifecycle flags for the dashboard window.
+    pub main_window: WindowFlags,
+    /// Lifecycle flags for the widget window.
+    pub widget_window: WindowFlags,
+    /// Number of windows currently shown. The snapshot bridge skips emissions
+    /// when every window is hidden.
+    pub visible_windows: Arc<AtomicU32>,
     proxy_status: Arc<RwLock<ProxyStatus>>,
     settings: Arc<RwLock<Settings>>,
     secrets: Arc<RwLock<SecretState>>,
     /// Last tray icon activation position.
     tray_anchor: Arc<RwLock<Option<TrayAnchor>>>,
+    /// Serializes on-demand window creation so two simultaneous requests do
+    /// not build the same window twice. Used by the window lifecycle module.
+    pub window_lock: Arc<Mutex<()>>,
+    /// Bumped on every widget show/hide so a pending eviction task can tell
+    /// whether it is still the current hide generation.
+    widget_hide_generation: Arc<AtomicU64>,
     app: AppHandle,
 }
 
@@ -49,7 +136,9 @@ impl AppState {
         if let Some(error) = secret_state.error() {
             tracing::warn!(%error, "DeepSeek key storage is degraded");
         }
-        let (events, _) = broadcast::channel(256);
+
+        let proxy_status = Arc::new(RwLock::new(ProxyStatus::default()));
+        let snapshots = SnapshotService::new(db.clone(), proxy_status.clone());
 
         let deepseek_http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -63,14 +152,22 @@ impl AppState {
             "TokenFlow storage initialized"
         );
 
+        let visible_windows = Arc::new(AtomicU32::new(0));
+
         Ok(Self {
             db,
-            events,
+            snapshots,
+            refresh: RefreshCoordinator::new(),
             deepseek_http,
-            proxy_status: Arc::new(RwLock::new(ProxyStatus::default())),
+            main_window: WindowFlags::new(visible_windows.clone()),
+            widget_window: WindowFlags::new(visible_windows.clone()),
+            visible_windows,
+            proxy_status,
             settings: Arc::new(RwLock::new(settings)),
             secrets: Arc::new(RwLock::new(secret_state)),
             tray_anchor: Arc::new(RwLock::new(None)),
+            window_lock: Arc::new(Mutex::new(())),
+            widget_hide_generation: Arc::new(AtomicU64::new(0)),
             app: app.clone(),
         })
     }
@@ -146,14 +243,9 @@ impl AppState {
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = status.clone();
 
-        if let Err(err) = self.app.emit("proxy-status", &status) {
-            tracing::warn!(%err, "could not emit proxy status event");
-        }
-    }
-
-    pub fn emit_metric(&self, event: MetricEvent) {
-        // A send error only means there are no subscribers; that is harmless.
-        let _ = self.events.send(event);
+        // The proxy status is part of the core snapshot; a change means the
+        // next rebuild (and the next `core-snapshot` event) carries it.
+        self.snapshots.mark_dirty();
     }
 
     /// Store a physical-pixel anchor from a tray activation.
@@ -170,28 +262,67 @@ impl AppState {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
-}
 
-/// Bridges the Tokio broadcast channel to Tauri's webview event system.
-pub fn spawn_event_forwarder(app: AppHandle, mut receiver: broadcast::Receiver<MetricEvent>) {
-    tauri::async_runtime::spawn(async move {
-        loop {
-            match receiver.recv().await {
-                Ok(event) => {
-                    let name = match &event {
-                        MetricEvent::OllamaUsage { .. } => "ollama-usage",
-                        MetricEvent::DeepSeekBalance { .. } => "deepseek-balance",
-                    };
+    /// Invalidates any pending widget eviction. Called whenever the widget is
+    /// shown so a stale timer can never destroy a visible window.
+    pub fn cancel_widget_eviction(&self) {
+        self.widget_hide_generation.fetch_add(1, Ordering::SeqCst);
+    }
 
-                    if let Err(err) = app.emit(name, &event) {
-                        tracing::warn!(%err, event = name, "could not emit metric event");
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    tracing::warn!(skipped, "metric event forwarder lagged");
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
+    /// Schedules suspension of the warm widget once it has been hidden for
+    /// `widget_eviction_secs`. On Linux this kills the widget's web process and
+    /// keeps the (hidden) window for a leak-free reload on the next open; other
+    /// platforms destroy the window. A value of `0` disables eviction.
+    ///
+    /// The hide generation guards against races: showing or re-hiding the
+    /// widget bumps it, so only the latest timer acts.
+    pub fn schedule_widget_eviction(&self) {
+        let seconds = self.settings().widget_eviction_secs;
+        if seconds == 0 {
+            return;
         }
-    });
+
+        let generation = self.widget_hide_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let state = self.clone();
+        let flags = self.widget_window.clone();
+        let app = self.app.clone();
+
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(seconds)).await;
+
+            // A newer show/hide superseded this timer.
+            if state.widget_hide_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+
+            // Do the check and the teardown in one main-thread turn so WebKit
+            // cannot respawn the process between them.
+            let app_for_task = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let Some(window) = app_for_task.get_webview_window("widget") else {
+                    return;
+                };
+                if window.is_visible().unwrap_or(false) {
+                    return;
+                }
+
+                tracing::debug!(seconds, "suspending the idle widget renderer");
+
+                #[cfg(target_os = "linux")]
+                {
+                    // Kill the renderer but keep the window and webview so the
+                    // next open reloads instead of rebuilding the whole widget
+                    // (which leaks UI-side memory per cycle in wry/Tauri).
+                    crate::windows::terminate_web_process(&window);
+                    flags.set_suspended(true);
+                }
+
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let _ = flags;
+                    let _ = window.destroy();
+                }
+            });
+        });
+    }
 }

@@ -255,6 +255,19 @@ impl Db {
         })
     }
 
+    /// Builds a dashboard aggregate for the core-owned fixed range.
+    ///
+    /// The range is always [`SNAPSHOT_RANGE_DAYS`]; there is no per-call
+    /// parameter so every window renders the same data. `revision`,
+    /// `generated_at`, and `proxy` are left at their zero values and filled in
+    /// by [`crate::snapshot::SnapshotService`].
+    pub fn snapshot(&self) -> Result<DashboardSummary, AppError> {
+        self.dashboard(crate::models::SNAPSHOT_RANGE_DAYS)
+    }
+
+    /// Legacy per-range dashboard builder. Kept so the deprecated
+    /// `get_dashboard` alias and the test suite keep working; the snapshot
+    /// service always goes through [`Db::snapshot`].
     pub fn dashboard(&self, range_days: u32) -> Result<DashboardSummary, AppError> {
         let conn = self.lock();
         let range_days = range_days.clamp(1, 3650);
@@ -273,6 +286,8 @@ impl Db {
         let streak_days = compute_streak(&daily, today);
 
         Ok(DashboardSummary {
+            // Filled in by the snapshot service; the raw DB build uses 0.
+            revision: 0,
             generated_at: chrono::Utc::now().timestamp(),
             range_days,
             totals: Totals {

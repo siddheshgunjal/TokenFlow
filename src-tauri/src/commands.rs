@@ -3,28 +3,61 @@ use zeroize::Zeroize;
 
 use crate::{
     error::AppError,
-    models::{BalanceSnapshot, ClearDataResult, DashboardSummary, DeepSeekStatus, ProxyStatus},
+    models::{
+        BalanceSnapshot, ClearDataResult, DashboardSummary, DeepSeekStatus, ProxyStatus,
+        RefreshResult,
+    },
     secrets::{self, KeyringStore, SecretStore},
     settings::{Settings, SettingsView},
     state::{AppState, TrayAnchor},
 };
 
+/// Returns the cached core snapshot, building it if none exists yet.
+#[tauri::command]
+pub async fn get_core_snapshot(state: State<'_, AppState>) -> Result<DashboardSummary, String> {
+    let state = state.inner().clone();
+    match state.snapshots.current() {
+        Some(snapshot) => Ok((*snapshot).clone()),
+        None => state
+            .snapshots
+            .rebuild()
+            .await
+            .map(|snapshot| (*snapshot).clone())
+            .map_err(|err| err.to_string()),
+    }
+}
+
+/// Unified manual refresh used by both the dashboard and the widget.
+///
+/// Acquires the refresh coordinator, performs at most one DeepSeek network
+/// call (skipped if a refresh landed within the last 2s), rebuilds the core
+/// snapshot, and returns it with any non-fatal DeepSeek error.
+#[tauri::command]
+pub async fn refresh_core(state: State<'_, AppState>) -> Result<RefreshResult, String> {
+    let state = state.inner().clone();
+
+    let deepseek_error = crate::deepseek::refresh_core_step(&state).await;
+
+    let snapshot = match state.snapshots.rebuild().await {
+        Ok(snapshot) => (*snapshot).clone(),
+        Err(err) => return Err(err.to_string()),
+    };
+
+    Ok(RefreshResult {
+        snapshot,
+        deepseek_error,
+    })
+}
+
+/// Deprecated alias for [`get_core_snapshot`]. Kept for one release so older
+/// UI builds keep working; it ignores `days` and always returns the core-owned
+/// fixed-range snapshot.
 #[tauri::command]
 pub async fn get_dashboard(
     state: State<'_, AppState>,
-    days: Option<u32>,
+    _days: Option<u32>,
 ) -> Result<DashboardSummary, String> {
-    let state = state.inner().clone();
-    let days = days.unwrap_or(30).clamp(1, 3650);
-
-    tokio::task::spawn_blocking(move || {
-        let mut dashboard = state.db.dashboard(days)?;
-        dashboard.proxy = state.proxy_status();
-        Ok::<_, AppError>(dashboard)
-    })
-    .await
-    .map_err(|err| err.to_string())?
-    .map_err(|err| err.to_string())
+    get_core_snapshot(state).await
 }
 
 #[tauri::command]
@@ -54,6 +87,7 @@ pub async fn save_settings(
         .await
         .map_err(|err| err.to_string())?;
 
+    let snapshots = state.snapshots.clone();
     let view = tokio::task::spawn_blocking(move || {
         state.update_settings(settings)?;
         settings_view(&state)
@@ -61,6 +95,9 @@ pub async fn save_settings(
     .await
     .map_err(|err| err.to_string())?
     .map_err(|err| err.to_string())?;
+
+    // The proxy/upstream config can change what the snapshot should report.
+    snapshots.mark_dirty();
 
     if let Some(window) = app.get_webview_window("widget") {
         if let Err(err) = window.set_always_on_top(widget_always_on_top) {
@@ -119,10 +156,14 @@ pub async fn save_deepseek_api_key(
     if view.has_deepseek_api_key {
         let state = state.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(err) = crate::deepseek::refresh(&state).await {
-                tracing::warn!(%err, "immediate DeepSeek refresh failed");
-            }
+            // Route through the coordinator so this cannot interleave with the
+            // periodic worker, and let the snapshot pick up the new balance.
+            let _ = crate::deepseek::refresh_guarded(&state).await;
+            state.snapshots.mark_dirty();
         });
+    } else {
+        // Removing the key changes what the snapshot should show.
+        state.snapshots.mark_dirty();
     }
 
     Ok(view)
@@ -134,14 +175,21 @@ pub async fn save_deepseek_api_key(
 #[tauri::command]
 pub async fn retry_deepseek_keychain(state: State<'_, AppState>) -> Result<SettingsView, String> {
     let state = state.inner().clone();
-    tokio::task::spawn_blocking(move || {
+    let snapshots = state.snapshots.clone();
+    let view = tokio::task::spawn_blocking(move || {
         let resolution = secrets::resolve(&state.db, &KeyringStore::new());
         state.replace_secret_state(resolution);
         settings_view(&state)
     })
     .await
     .map_err(|err| err.to_string())?
-    .map_err(|err| err.to_string())
+    .map_err(|err| err.to_string())?;
+
+    // A key that was previously unavailable may now resolve, which changes
+    // what the snapshot should show.
+    snapshots.mark_dirty();
+
+    Ok(view)
 }
 
 #[tauri::command]
@@ -153,14 +201,19 @@ pub async fn get_deepseek_status(state: State<'_, AppState>) -> Result<DeepSeekS
         .map_err(|err| err.to_string())
 }
 
+/// Deprecated; the UI now uses `refresh_core`. Kept for one release. Routes
+/// through the coordinator and marks the snapshot dirty so the new balance is
+/// picked up by the next `core-snapshot`.
 #[tauri::command]
 pub async fn refresh_deepseek_balance(
     state: State<'_, AppState>,
 ) -> Result<Vec<BalanceSnapshot>, String> {
     let state = state.inner().clone();
-    crate::deepseek::refresh(&state)
-        .await
-        .map_err(|err| err.to_string())
+    match crate::deepseek::refresh_guarded(&state).await {
+        Ok(Some(snapshots)) => Ok(snapshots),
+        Ok(None) => Ok(Vec::new()),
+        Err(err) => Err(err.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -180,10 +233,16 @@ pub async fn get_balance_history(
 #[tauri::command]
 pub async fn clear_usage_data(state: State<'_, AppState>) -> Result<ClearDataResult, String> {
     let state = state.inner().clone();
-    tokio::task::spawn_blocking(move || state.db.clear_usage_data())
+    let snapshots = state.snapshots.clone();
+    let result = tokio::task::spawn_blocking(move || state.db.clear_usage_data())
         .await
         .map_err(|err| err.to_string())?
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    // The usage tables are now empty; the snapshot must be rebuilt.
+    snapshots.mark_dirty();
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -193,13 +252,20 @@ pub fn get_proxy_status(state: State<'_, AppState>) -> ProxyStatus {
 
 #[tauri::command]
 pub fn show_main_window(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window is not available".to_string())?;
+    let window = crate::windows::ensure_window(&app, "main")?;
+    let state = app.state::<AppState>();
+
+    // On Linux the window is kept after closing; its renderer was terminated
+    // while hidden, so reload the page before revealing it.
+    #[cfg(target_os = "linux")]
+    if state.main_window.take_suspended() {
+        crate::windows::reload_window(&window);
+    }
 
     window.show().map_err(|err| err.to_string())?;
     window.unminimize().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
+    state.main_window.set_visible(true);
     Ok(())
 }
 
@@ -214,14 +280,26 @@ pub fn quit_app(app: AppHandle) {
 }
 
 /// Shared by the tray menu and the `toggle_widget` command.
+///
+/// The widget is created on first open and kept warm for
+/// `widget_eviction_secs` after hiding; once that window elapses the webview is
+/// destroyed to reclaim memory, and the next open cold-starts and fetches the
+/// core snapshot.
 pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bool, String> {
-    let window = app
-        .get_webview_window("widget")
-        .ok_or_else(|| "Widget window is not available".to_string())?;
-    let state = app.state::<AppState>();
-    let target = visible.unwrap_or_else(|| !window.is_visible().unwrap_or(false));
+    // Invalidate any pending eviction before touching the window so a timer
+    // cannot destroy a window we are about to show or have just rebuilt.
+    if let Some(state) = app.try_state::<AppState>() {
+        state.cancel_widget_eviction();
+    }
+
+    let window = crate::windows::ensure_window(app, "widget")?;
+    let target = match visible {
+        Some(value) => value,
+        None => !window.is_visible().unwrap_or(false),
+    };
 
     if target {
+        let state = app.state::<AppState>();
         let always_on_top = state.settings().widget_always_on_top;
         if let Err(err) = window.set_always_on_top(always_on_top) {
             tracing::warn!(%err, "could not set widget always-on-top");
@@ -231,16 +309,37 @@ pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bo
         // then position again after the window is mapped so the tray anchor is
         // honored on every platform.
         position_widget(&window, state.inner());
+
+        // On Linux the window is kept after hiding; reload the page when its
+        // renderer was suspended by the eviction timer.
+        #[cfg(target_os = "linux")]
+        if state.widget_window.take_suspended() {
+            crate::windows::reload_window(&window);
+        }
+
         window.show().map_err(|err| err.to_string())?;
         position_widget(&window, state.inner());
+        state.widget_window.set_visible(true);
 
-        // Hidden webviews throttle their timers, so the widget explicitly
-        // refreshes whenever it is revealed from the tray (or on launch).
+        // The hook buffers updates while hidden; `widget-shown` tells it to
+        // flush the buffer and sync so a reveal is instant and current.
         if let Err(err) = app.emit("widget-shown", ()) {
             tracing::warn!(%err, "could not emit widget-shown");
         }
     } else {
         window.hide().map_err(|err| err.to_string())?;
+        if let Some(state) = app.try_state::<AppState>() {
+            state.widget_window.set_visible(false);
+        }
+        if let Err(err) = app.emit("widget-hidden", ()) {
+            tracing::warn!(%err, "could not emit widget-hidden");
+        }
+
+        // Start the idle timer that suspends/kills the warm renderer after
+        // `widget_eviction_secs` (no-op when the setting is 0).
+        if let Some(state) = app.try_state::<AppState>() {
+            state.schedule_widget_eviction();
+        }
     }
 
     Ok(target)

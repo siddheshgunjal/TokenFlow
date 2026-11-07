@@ -76,6 +76,11 @@ keyring = { version = "3", default-features = false, features = [
     "sync-secret-service",
     "crypto-rust",
 ] }
+# Used only to call `WebViewExt::terminate_web_process`. wry's IPC handler
+# keeps a strong reference cycle on the WebView, so the GObject is never
+# finalized and its WebKitWebProcess outlives the closed window. This is the
+# same crate/feature set Tauri already compiles, so it adds no new code.
+webkit2gtk = { version = "2", features = ["v2_34"] }
 
 # macOS Keychain. Tauri is otherwise platform-neutral here.
 [target.'cfg(target_os = "macos")'.dependencies]

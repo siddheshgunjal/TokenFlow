@@ -21,7 +21,7 @@ use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use crate::{
-    models::{MetricEvent, OllamaLogInsert, ProxyStatus},
+    models::{OllamaLogInsert, ProxyStatus},
     state::AppState,
 };
 
@@ -385,16 +385,9 @@ impl StreamInspector {
                         endpoint = %endpoint,
                         "recorded Ollama usage"
                     );
-                    state.emit_metric(MetricEvent::OllamaUsage {
-                        model,
-                        input_tokens,
-                        output_tokens,
-                        cached_input_tokens,
-                        // Flow total: the prompt prefix served from cache is not
-                        // added again on every request.
-                        total_tokens: (input_tokens - cached_input_tokens) + output_tokens,
-                        timestamp: created_at,
-                    });
+                    // The snapshot service coalesces this with other dirty
+                    // signals into a single rebuild; no direct DB read here.
+                    state.snapshots.mark_dirty();
                 }
                 Ok(false) => {
                     tracing::debug!(endpoint = %endpoint, "duplicate usage event ignored");

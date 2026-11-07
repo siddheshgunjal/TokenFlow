@@ -94,6 +94,16 @@ function buildModels(
   });
 }
 
+let mockRev = 0;
+function mockRevision(): number {
+  mockRev += 1;
+  return mockRev;
+}
+
+export function mockCoreSnapshot(): DashboardSummary {
+  return mockDashboard(30);
+}
+
 export function mockDashboard(rangeDays = 30): DashboardSummary {
   const daily = buildDaily();
   const range = daily.slice(-Math.min(Math.max(rangeDays, 1), 365));
@@ -158,6 +168,7 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
   });
 
   return {
+    revision: mockRevision(),
     generatedAt: Math.floor(Date.now() / 1000),
     rangeDays,
     totals: {
@@ -244,6 +255,7 @@ export const mockSettings: Settings = {
   closeToTray: true,
   widgetAlwaysOnTop: true,
   showWidgetOnStart: false,
+  widgetEvictionSecs: 60,
   launchAtLogin: false,
 };
 

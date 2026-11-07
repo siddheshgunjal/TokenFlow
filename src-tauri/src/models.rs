@@ -145,16 +145,34 @@ pub struct DeepSeekStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSummary {
+    /// Monotonic; increments on every rebuild. The UI uses it to discard stale
+    /// events that arrive out of order.
+    pub revision: u64,
     pub generated_at: i64,
+    /// Always [`SNAPSHOT_RANGE_DAYS`]. There is no per-window range parameter.
     pub range_days: u32,
     pub totals: Totals,
     pub streak_days: u32,
     pub models: Vec<ModelUsage>,
-    /// Always covers the last 365 local days so the heatmap is stable.
+    /// Covers the last 365 local days so the heatmap is stable.
     pub daily: Vec<DailyUsage>,
     pub recent: Vec<OllamaLog>,
     pub latest_balance: Option<BalanceSnapshot>,
     pub proxy: ProxyStatus,
+}
+
+/// The dashboard range is owned by the core. Windows no longer pass their own
+/// window size; they all render the same fixed-range snapshot.
+pub const SNAPSHOT_RANGE_DAYS: u32 = 30;
+
+/// Result of a unified manual refresh. The snapshot is always valid; a
+/// DeepSeek failure is reported alongside it as a non-fatal error.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshResult {
+    pub snapshot: DashboardSummary,
+    /// Non-fatal DeepSeek failure. The snapshot is still valid.
+    pub deepseek_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -162,28 +180,6 @@ pub struct DashboardSummary {
 pub struct ClearDataResult {
     pub ollama_logs: usize,
     pub deepseek_balances: usize,
-}
-
-/// Events are written to a Tokio broadcast channel and forwarded to the
-/// frontend by [`crate::state::spawn_event_forwarder`]. The broadcast layer
-/// keeps the proxy decoupled from Tauri window/event APIs.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum MetricEvent {
-    OllamaUsage {
-        model: String,
-        input_tokens: i64,
-        output_tokens: i64,
-        cached_input_tokens: i64,
-        total_tokens: i64,
-        timestamp: i64,
-    },
-    DeepSeekBalance {
-        is_available: bool,
-        balance: String,
-        currency: String,
-        timestamp: i64,
-    },
 }
 
 /// Deserialized DeepSeek balance API response.
