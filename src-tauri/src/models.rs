@@ -102,6 +102,49 @@ pub struct OllamaLog {
     pub duration_ms: Option<i64>,
 }
 
+/// Per-hour token bucket for a single day. The two denominator fields are
+/// mandatory so the UI can compute a token-weighted cache rate for any scope;
+/// averaging pre-computed hourly rates would be wrong.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HourlyUsage {
+    /// Local hour, 0–23.
+    pub hour: u32,
+    pub new_input_tokens: i64,
+    pub output_tokens: i64,
+    /// new_input_tokens + output_tokens.
+    pub total_tokens: i64,
+    pub requests: i64,
+    /// Sum of per-request prompt sizes in this hour. Cache-rate denominator.
+    pub context_processed_tokens: i64,
+    /// Sum of cached prefixes in this hour. Cache-rate numerator.
+    pub cached_processed_tokens: i64,
+    /// Token-weighted cache share: sum(cached) / sum(prompt), 0.0–1.0.
+    pub cache_hit_rate: f64,
+}
+
+/// Per-model hourly buckets for one day. Always 24 entries, hour 0..=23.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelHourlyUsage {
+    pub model: String,
+    /// Always 24 entries, hour 0..=23.
+    pub hours: Vec<HourlyUsage>,
+}
+
+/// Read-only, lazy payload for a single calendar day. This is not part of
+/// [`DashboardSummary`]; it is built on demand by `get_day_usage_detail`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayUsageDetail {
+    /// Local calendar date in `YYYY-MM-DD` format.
+    pub date: String,
+    /// Always 24 entries, hour 0..=23, all models combined.
+    pub hours: Vec<HourlyUsage>,
+    /// Models active that day, sorted by total tokens desc, then model asc.
+    pub models: Vec<ModelHourlyUsage>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BalanceSnapshot {

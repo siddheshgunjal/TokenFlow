@@ -12,7 +12,8 @@ use crate::{
     error::AppError,
     models::{
         BalanceInfoInput, BalanceSnapshot, ClearDataResult, DailyUsage, DashboardSummary,
-        DeepSeekSyncStatus, ModelUsage, OllamaLog, OllamaLogInsert, ProxyStatus, Totals,
+        DayUsageDetail, DeepSeekSyncStatus, HourlyUsage, ModelHourlyUsage, ModelUsage, OllamaLog,
+        OllamaLogInsert, ProxyStatus, Totals,
     },
 };
 
@@ -319,6 +320,18 @@ impl Db {
             // Filled in by the command layer from the live proxy state.
             proxy: ProxyStatus::default(),
         })
+    }
+
+    /// Builds a read-only, per-hour breakdown for a single local calendar day.
+    ///
+    /// This is a lazy, on-demand query; it is deliberately kept out of
+    /// [`Db::snapshot`] so the dashboard and widget payloads stay unchanged.
+    /// The range is one local day: `local_midnight(date)` through
+    /// `local_midnight(date + 1)`, so DST edges resolve against local clock
+    /// time and hour buckets are always 0–23.
+    pub fn day_usage_detail(&self, date: NaiveDate) -> Result<DayUsageDetail, AppError> {
+        let conn = self.lock();
+        Ok(day_usage_detail(&conn, date)?)
     }
 }
 
@@ -668,13 +681,156 @@ fn local_midnight(date: NaiveDate) -> i64 {
     }
 }
 
+/// Per-hour accumulator. Built per model and summed into the all-model row,
+/// so the panel totals always equal the calendar day.
+#[derive(Clone, Default)]
+struct HourBucket {
+    new_input_tokens: i64,
+    output_tokens: i64,
+    requests: i64,
+    context_processed_tokens: i64,
+    cached_processed_tokens: i64,
+}
+
+impl HourBucket {
+    fn add(
+        &mut self,
+        new_input_tokens: i64,
+        output_tokens: i64,
+        requests: i64,
+        prompt: i64,
+        cached: i64,
+    ) {
+        self.new_input_tokens += new_input_tokens;
+        self.output_tokens += output_tokens;
+        self.requests += requests;
+        self.context_processed_tokens += prompt;
+        self.cached_processed_tokens += cached;
+    }
+
+    fn into_hourly(self, hour: u32) -> HourlyUsage {
+        let total_tokens = self.new_input_tokens + self.output_tokens;
+        HourlyUsage {
+            hour,
+            new_input_tokens: self.new_input_tokens,
+            output_tokens: self.output_tokens,
+            total_tokens,
+            requests: self.requests,
+            context_processed_tokens: self.context_processed_tokens,
+            cached_processed_tokens: self.cached_processed_tokens,
+            cache_hit_rate: cache_hit_rate(
+                self.cached_processed_tokens,
+                self.context_processed_tokens,
+            ),
+        }
+    }
+
+    fn total_tokens(&self) -> i64 {
+        self.new_input_tokens + self.output_tokens
+    }
+}
+
+fn day_usage_detail(conn: &Connection, date: NaiveDate) -> rusqlite::Result<DayUsageDetail> {
+    let start = local_midnight(date);
+    let end = local_midnight(date + chrono::Duration::days(1));
+
+    let mut stmt = conn.prepare(
+        "SELECT CAST(strftime('%H', created_at, 'unixepoch', 'localtime') AS INTEGER) AS hour,
+               model,
+               COALESCE(SUM(CASE
+                   WHEN prompt_tokens > cached_prompt_tokens
+                   THEN prompt_tokens - cached_prompt_tokens
+                   ELSE 0
+               END), 0) AS new_input_tokens,
+               COALESCE(SUM(completion_tokens), 0) AS output_tokens,
+               COALESCE(SUM(cached_prompt_tokens), 0) AS cached_processed_tokens,
+               COALESCE(SUM(prompt_tokens), 0) AS context_processed_tokens,
+               COUNT(*) AS requests
+         FROM ollama_logs
+         WHERE created_at >= ?1 AND created_at < ?2
+         GROUP BY hour, model
+         ORDER BY model ASC, hour ASC",
+    )?;
+
+    let rows = stmt.query_map(params![start, end], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
+        ))
+    })?;
+
+    // Model -> 24-bucket array. A `Vec` keyed by model name keeps insertion
+    // order stable for the sort that follows.
+    let mut models: Vec<(String, Vec<HourBucket>)> = Vec::new();
+    let mut all_hours: Vec<HourBucket> = vec![HourBucket::default(); 24];
+
+    for row in rows {
+        let (hour, model, new_input, output, cached, prompt, requests) = row?;
+
+        // Defensively skip any SQL hour outside 0..=23 (should never happen).
+        let hour = if (0..=23).contains(&hour) {
+            hour as u32
+        } else {
+            continue;
+        };
+
+        let index = models
+            .iter()
+            .position(|(name, _)| name == &model)
+            .unwrap_or_else(|| {
+                models.push((model.clone(), vec![HourBucket::default(); 24]));
+                models.len() - 1
+            });
+
+        let bucket = &mut models[index].1[hour as usize];
+        bucket.add(new_input, output, requests, prompt, cached);
+        all_hours[hour as usize].add(new_input, output, requests, prompt, cached);
+    }
+
+    // Sort models by the day's total tokens descending, then name ascending.
+    models.sort_by(|a, b| {
+        let total_a: i64 = a.1.iter().map(HourBucket::total_tokens).sum();
+        let total_b: i64 = b.1.iter().map(HourBucket::total_tokens).sum();
+        total_b.cmp(&total_a).then_with(|| a.0.cmp(&b.0))
+    });
+
+    let model_hours: Vec<ModelHourlyUsage> = models
+        .into_iter()
+        .map(|(model, buckets)| ModelHourlyUsage {
+            model,
+            hours: buckets
+                .into_iter()
+                .enumerate()
+                .map(|(index, bucket)| bucket.into_hourly(index as u32))
+                .collect(),
+        })
+        .collect();
+
+    let hours = all_hours
+        .into_iter()
+        .enumerate()
+        .map(|(index, bucket)| bucket.into_hourly(index as u32))
+        .collect();
+
+    Ok(DayUsageDetail {
+        date: date.format("%Y-%m-%d").to_string(),
+        hours,
+        models: model_hours,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        balance_history, cache_hit_rate, daily_since, local_midnight, models_since, run_migrations,
-        totals_since, Db,
+        balance_history, cache_hit_rate, daily_since, day_usage_detail, local_midnight,
+        models_since, run_migrations, totals_since, Db,
     };
-    use chrono::Local;
+    use chrono::{Local, TimeZone};
     use rusqlite::{params, Connection};
 
     #[test]
@@ -832,5 +988,87 @@ mod tests {
         assert!(columns
             .iter()
             .any(|column| column == "cached_prompt_tokens"));
+    }
+
+    #[test]
+    fn day_detail_buckets_by_local_hour_and_weights_cache_rate() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        run_migrations(&conn).expect("migrations");
+
+        // A fixed, non-DST-sensitive date so local wall-clock hours are stable.
+        let day = chrono::NaiveDate::from_ymd_opt(2024, 1, 15).expect("valid date");
+        let at = |hour: u32, minute: u32| {
+            Local
+                .with_ymd_and_hms(2024, 1, 15, hour, minute, 0)
+                .single()
+                .expect("unambiguous local time")
+                .timestamp()
+        };
+
+        let insert =
+            |request_id: &str, model: &str, prompt: i64, completion: i64, cached: i64, at: i64| {
+                conn.execute(
+                    "INSERT INTO ollama_logs
+                    (request_id, model, endpoint, prompt_tokens, completion_tokens,
+                     cached_prompt_tokens, created_at, duration_ms)
+                 VALUES (?1, ?2, '/api/chat', ?3, ?4, ?5, ?6, 1000)",
+                    params![request_id, model, prompt, completion, cached, at],
+                )
+                .expect("insert usage row");
+            };
+
+        // Two models across multiple hours; hour 9 holds two llama rows so the
+        // per-hour grouping is exercised, and one model is absent from hour 9.
+        insert("r1", "llama3.2", 1_000, 100, 0, at(9, 5));
+        insert("r2", "llama3.2", 2_000, 100, 1_500, at(9, 40));
+        insert("r3", "qwen2.5", 4_000, 200, 3_000, at(21, 10));
+        insert("r4", "llama3.2", 500, 50, 250, at(14, 30));
+
+        let detail = day_usage_detail(&conn, day).expect("day detail");
+        assert_eq!(detail.date, "2024-01-15");
+        assert_eq!(detail.hours.len(), 24);
+        assert_eq!(detail.models.len(), 2);
+        for model in &detail.models {
+            assert_eq!(model.hours.len(), 24);
+        }
+
+        // Models are sorted by the day's total tokens descending.
+        assert_eq!(detail.models[0].model, "llama3.2");
+        assert_eq!(detail.models[1].model, "qwen2.5");
+
+        let llama = &detail.models[0];
+        // Hour 9 aggregates only the two local-hour-9 llama rows.
+        let llama_h9 = &llama.hours[9];
+        assert_eq!(llama_h9.new_input_tokens, 1_500);
+        assert_eq!(llama_h9.output_tokens, 200);
+        assert_eq!(llama_h9.total_tokens, 1_700);
+        assert_eq!(llama_h9.requests, 2);
+        // Every other hour is zero-filled except hour 14.
+        for (index, bucket) in llama.hours.iter().enumerate() {
+            if index != 9 && index != 14 {
+                assert_eq!(bucket.total_tokens, 0);
+                assert_eq!(bucket.requests, 0);
+            }
+        }
+        assert_eq!(llama.hours[14].new_input_tokens, 250);
+        assert_eq!(llama.hours[14].requests, 1);
+
+        // Cache rate is token-weighted across the hour, not an average of the
+        // per-request rates (r1 = 0.0, r2 = 0.75; the weighted value is 0.5).
+        assert!((llama_h9.cache_hit_rate - 1_500.0 / 3_000.0).abs() < 1e-9);
+
+        // All-model hours are the sum of the per-model buckets.
+        let all_h9 = &detail.hours[9];
+        assert_eq!(all_h9.new_input_tokens, llama_h9.new_input_tokens);
+        assert_eq!(all_h9.requests, 2);
+        let all_total: i64 = detail.hours.iter().map(|h| h.total_tokens).sum();
+        let model_total: i64 = detail
+            .models
+            .iter()
+            .map(|model| model.hours.iter().map(|h| h.total_tokens).sum::<i64>())
+            .sum();
+        assert_eq!(all_total, model_total);
+        // llama3.2: 1_100 + 600 + 300 = 2_000; qwen2.5: 1_200. Total 3_200.
+        assert_eq!(all_total, 2_000 + 1_200);
     }
 }

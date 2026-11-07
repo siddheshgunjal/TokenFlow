@@ -1,11 +1,13 @@
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State};
 use zeroize::Zeroize;
 
+use chrono::NaiveDate;
+
 use crate::{
     error::AppError,
     models::{
-        BalanceSnapshot, ClearDataResult, DashboardSummary, DeepSeekStatus, ProxyStatus,
-        RefreshResult,
+        BalanceSnapshot, ClearDataResult, DashboardSummary, DayUsageDetail, DeepSeekStatus,
+        ProxyStatus, RefreshResult,
     },
     secrets::{self, KeyringStore, SecretStore},
     settings::{Settings, SettingsView},
@@ -225,6 +227,25 @@ pub async fn get_balance_history(
 ) -> Result<Vec<BalanceSnapshot>, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || state.db.balance_history(&currency, since, until))
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+/// Builds a read-only, per-hour breakdown for one local calendar day.
+///
+/// This is a lazy command: the payload is computed on demand and is not part
+/// of the core snapshot, so the dashboard and widget are unaffected.
+#[tauri::command]
+pub async fn get_day_usage_detail(
+    state: State<'_, AppState>,
+    date: String,
+) -> Result<DayUsageDetail, String> {
+    let parsed = NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+        .map_err(|_| "Invalid date; expected YYYY-MM-DD".to_string())?;
+    let state = state.inner().clone();
+
+    tokio::task::spawn_blocking(move || state.db.day_usage_detail(parsed))
         .await
         .map_err(|err| err.to_string())?
         .map_err(|err| err.to_string())

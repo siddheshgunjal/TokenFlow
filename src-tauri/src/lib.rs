@@ -140,6 +140,7 @@ pub fn run() {
             commands::get_balance_history,
             commands::refresh_deepseek_balance,
             commands::clear_usage_data,
+            commands::get_day_usage_detail,
             commands::get_proxy_status,
             commands::show_main_window,
             commands::toggle_widget,
