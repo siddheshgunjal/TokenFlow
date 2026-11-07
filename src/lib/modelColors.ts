@@ -13,7 +13,6 @@ export interface ModelColor {
 export const MODEL_PALETTE: ModelColor[] = [
   { hex: "#00D4C0" }, // accent / teal
   { hex: "#2F6BFF" }, // accent-blue
-  { hex: "#00A896" }, // accent-strong
   { hex: "#F5A623" }, // warning / amber
   { hex: "#A78BFA" }, // violet
   { hex: "#F472B6" }, // pink
@@ -23,13 +22,17 @@ export const MODEL_PALETTE: ModelColor[] = [
   { hex: "#FB7185" }, // rose
   { hex: "#818CF8" }, // indigo
   { hex: "#E879F9" }, // fuchsia
+  { hex: "#FCD34D" }, // yellow
+  { hex: "#22C55E" }, // green
 ];
 
 /**
  * Maps each model in the 30-day snapshot to its color, in order, so the Models
  * card and the day-detail chart always agree. Built once per snapshot.
  */
-export function buildModelColorMap(models: ModelUsage[]): Map<string, ModelColor> {
+export function buildModelColorMap(
+  models: ModelUsage[],
+): Map<string, ModelColor> {
   const map = new Map<string, ModelColor>();
   models.forEach((model, index) => {
     map.set(model.model, MODEL_PALETTE[index % MODEL_PALETTE.length]);

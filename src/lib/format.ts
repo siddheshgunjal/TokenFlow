@@ -83,6 +83,72 @@ export function toDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Parses a `YYYY-MM-DD` key into a local `Date` at noon. Noon is used so the
+ * value is never ambiguous across a DST transition when it is later re-read
+ * by `getFullYear` / `getMonth` / `getDate`.
+ */
+export function parseDateKey(key: string): Date {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+/** Long, human-readable label for the selected day (e.g. "Wednesday, November 5, 2026"). */
+export function formatSelectedDay(key: string): string {
+  return parseDateKey(key).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * Re-anchors a selected `YYYY-MM-DD` key to the month `offset` months before
+ * today. The day-of-month is preserved and clamped to the target month's last
+ * day; at `offset === 0` it is also clamped to today so no future date is
+ * ever selected. Returns a `YYYY-MM-DD` key.
+ */
+export function dateKeyForMonthOffset(
+  currentKey: string,
+  offset: number,
+  today = new Date(),
+): string {
+  const target = new Date(
+    today.getFullYear(),
+    today.getMonth() - offset,
+    1,
+    12,
+  );
+
+  const current = parseDateKey(currentKey);
+  const sameMonth =
+    current.getFullYear() === target.getFullYear() &&
+    current.getMonth() === target.getMonth();
+
+  if (sameMonth) {
+    // Keep the selection, but never let it drift into the future this month.
+    if (offset === 0 && current.getTime() > today.getTime()) {
+      return toDateKey(today);
+    }
+    return currentKey;
+  }
+
+  const lastDay = new Date(
+    target.getFullYear(),
+    target.getMonth() + 1,
+    0,
+  ).getDate();
+  const day = Math.min(current.getDate(), lastDay);
+  const next = new Date(target.getFullYear(), target.getMonth(), day, 12);
+
+  // Never select a future day when landing in the current month.
+  if (offset === 0 && next.getTime() > today.getTime()) {
+    return toDateKey(today);
+  }
+  return toDateKey(next);
+}
+
 export function classNames(
   ...values: Array<string | false | null | undefined>
 ): string {
