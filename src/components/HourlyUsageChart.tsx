@@ -10,7 +10,7 @@ export interface HourlyChartSeries {
   values: number[];
 }
 
-const HOUR_LABELS = ["12am", "6am", "12pm", "6pm", "11pm"];
+const HOUR_LABELS = ["12am", "6am", "12pm", "6pm", "11.59pm"];
 
 /**
  * A plain-SVG hourly line/area chart, tailored to usage. A single series
@@ -184,22 +184,21 @@ export function HourlyUsageChart({
               vectorEffect="non-scaling-stroke"
             />
           ) : null}
-
-          {hoverHour !== null
-            ? series.map((s) => (
-                <circle
-                  key={s.id}
-                  cx={toX(hoverHour)}
-                  cy={toY(s.values[hoverHour])}
-                  r="2"
-                  fill={s.color}
-                  stroke="rgba(0,0,0,0.5)"
-                  strokeWidth="0.75"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))
-            : null}
         </svg>
+
+        {hoverHour !== null
+          ? series.map((s) => (
+              <span
+                key={s.id}
+                className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-black/50"
+                style={{
+                  left: `${toX(hoverHour)}%`,
+                  top: `${toY(s.values[hoverHour])}%`,
+                  backgroundColor: s.color,
+                }}
+              />
+            ))
+          : null}
 
         {tooltipEntries ? (
           <div
