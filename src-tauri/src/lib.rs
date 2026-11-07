@@ -8,11 +8,13 @@ mod platform;
 mod proxy;
 mod secrets;
 mod settings;
+mod snapshot;
 mod startup;
 mod state;
 mod tray;
+mod windows;
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -51,24 +53,31 @@ pub fn run() {
             let _ = app.manage(state.clone());
 
             tray::create(&handle)?;
-            state::spawn_event_forwarder(handle.clone(), state.events.subscribe());
+            // The core owns all snapshot building and refresh coordination.
+            // The scheduler seeds an initial rebuild and coalesces dirty
+            // signals; the bridge forwards `core-snapshot` to open windows.
+            snapshot::spawn_scheduler(state.snapshots.clone());
+            snapshot::spawn_bridge(
+                handle.clone(),
+                state.snapshots.subscribe(),
+                state.visible_windows.clone(),
+            );
 
             let settings = state.settings();
             if startup::is_autostart_launch() {
-                tracing::debug!("started by the login item");
-            }
-
-            if settings.show_widget_on_start {
-                let _ = commands::toggle_widget_window(&handle, Some(true));
-            } else if let Some(widget) = app.get_webview_window("widget") {
-                let _ = widget.set_always_on_top(settings.widget_always_on_top);
-            }
-
-            // The main window is created hidden so a login launch never flashes
-            // it before setup decides whether to show it.
-            if let Some(main) = app.get_webview_window("main") {
+                // An autostart launch creates no windows at all. The core, tray,
+                // and proxy run headless; the user opens the dashboard or
+                // widget explicitly from the tray.
+                tracing::debug!("started by the login item; no windows created");
+            } else {
+                // Manual launch: create and show the dashboard unless the user
+                // prefers to start minimized.
                 if !settings.start_minimized {
-                    let _ = main.show();
+                    let _ = commands::show_main_window(handle.clone());
+                }
+
+                if settings.show_widget_on_start {
+                    let _ = commands::toggle_widget_window(&handle, Some(true));
                 }
             }
 
@@ -77,20 +86,51 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 if window.label() == "main" {
                     let state = window.state::<state::AppState>();
-                    if state.settings().close_to_tray {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    } else {
+                    if !state.settings().close_to_tray {
+                        // Explicit quit: `exit(0)` produces an `ExitRequested`
+                        // with `code: Some(0)`, which the run handler lets
+                        // through.
                         window.app_handle().exit(0);
+                        return;
+                    }
+
+                    api.prevent_close();
+                    state.main_window.set_visible(false);
+
+                    #[cfg(target_os = "linux")]
+                    {
+                        // Keep the core and the window (hidden) alive, but kill
+                        // the dashboard renderer so its ~100 MB web process is
+                        // released. The next open reloads the page. Rebuilding
+                        // the window/webview per open/close leaks UI-side memory
+                        // in wry/Tauri, so Linux never destroys them.
+                        let _ = window.hide();
+                        if let Some(webview) = window.app_handle().get_webview_window("main") {
+                            crate::windows::terminate_web_process(&webview);
+                        }
+                        state.main_window.set_suspended(true);
+                    }
+
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        let _ = window.destroy();
                     }
                 }
             }
+            tauri::WindowEvent::Destroyed => {
+                // Debug-level so the window lifecycle can be verified with
+                // `RUST_LOG=tokenflow=debug` without normal-run noise.
+                tracing::debug!(label = window.label(), "window destroyed");
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            commands::get_core_snapshot,
+            commands::refresh_core,
             commands::get_dashboard,
             commands::get_settings,
             commands::save_settings,
@@ -108,14 +148,25 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building TokenFlow")
         .run(|app_handle, event| {
+            // The last window was destroyed. Keep the core and tray alive; only
+            // an explicit quit (code `Some`) may exit the process.
+            if let RunEvent::ExitRequested {
+                code: None, api, ..
+            } = event
+            {
+                api.prevent_exit();
+                return;
+            }
+
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = event {
+            if let RunEvent::Reopen { .. } = event {
+                // Dock reactivation recreates the dashboard.
                 focus_dashboard(app_handle);
             }
 
             #[cfg(not(target_os = "macos"))]
             {
-                let _ = (app_handle, event);
+                let _ = app_handle;
             }
         });
 }

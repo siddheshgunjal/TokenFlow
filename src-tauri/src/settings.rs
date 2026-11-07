@@ -25,6 +25,9 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub widget_always_on_top: bool,
     pub show_widget_on_start: bool,
+    /// Destroy the hidden widget after this many seconds to reclaim its
+    /// webview. `0` keeps it warm indefinitely.
+    pub widget_eviction_secs: u64,
     pub launch_at_login: bool,
 }
 
@@ -47,6 +50,7 @@ impl Default for Settings {
             close_to_tray: true,
             widget_always_on_top: true,
             show_widget_on_start: false,
+            widget_eviction_secs: 60,
             launch_at_login: false,
         }
     }
@@ -80,6 +84,7 @@ impl Settings {
             .trim_end_matches('/')
             .to_string();
         self.deepseek_poll_interval_secs = self.deepseek_poll_interval_secs.clamp(60, 86_400);
+        self.widget_eviction_secs = self.widget_eviction_secs.min(86_400);
         self
     }
 
@@ -109,6 +114,12 @@ impl Settings {
         if !(60..=86_400).contains(&self.deepseek_poll_interval_secs) {
             return Err(AppError::Config(
                 "DeepSeek polling interval must be between 60 and 86400 seconds.".to_string(),
+            ));
+        }
+
+        if self.widget_eviction_secs > 86_400 {
+            return Err(AppError::Config(
+                "Widget idle eviction must be 0 (disabled) or at most 86400 seconds.".to_string(),
             ));
         }
 
@@ -172,6 +183,23 @@ mod tests {
         let settings: Settings = serde_json::from_str(raw).expect("old settings blob deserializes");
         assert!(!settings.launch_at_login);
         assert!(settings.start_minimized);
+        // A settings blob written before widget eviction existed inherits the
+        // current default via `#[serde(default)]`.
+        assert_eq!(
+            settings.widget_eviction_secs,
+            Settings::default().widget_eviction_secs
+        );
+    }
+
+    #[test]
+    fn widget_eviction_serializes_as_camel_case() {
+        let settings = Settings {
+            widget_eviction_secs: 90,
+            ..Settings::default()
+        };
+
+        let raw = serde_json::to_string(&settings).expect("settings serialize");
+        assert!(raw.contains("\"widgetEvictionSecs\":90"));
     }
 
     #[test]
