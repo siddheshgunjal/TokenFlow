@@ -20,35 +20,54 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 
 ![CI](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/ci.yml?style=for-the-badge&logo=checkmarx&label=CI)
 ![Build](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/release.yml?style=for-the-badge&logo=build&label=Build)
+![Dev Build](https://img.shields.io/github/v/release/siddheshgunjal/TokenFlow?include_prereleases&style=for-the-badge&label=Dev%20build)
+
 [<img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Fsiddheshgunjal.github.io%2F&style=for-the-badge&logo=htmx">][website]
 
 </div>
 
-## Features
+## ✨ Features
 
-- Local-only Ollama proxy on `127.0.0.1:11435`, forwarding requests unchanged to the user's Ollama server
-- Input, output, and cached-input token capture from NDJSON and SSE streams with deduplication by request ID
-- DeepSeek balance polling every 15 minutes, storing one row per currency with success/error timestamps
-- Dashboard with totals, today's streak, model breakdown, 365-day series, recent requests, balance, and proxy status
-- Tray-anchored metrics panel with live input/output/cache numbers, 14-day input/output graph, and DeepSeek balance breakdown
-- Cross-platform packaging: Linux (.deb, .rpm, AppImage), Windows (NSIS .exe), macOS (.dmg, ad-hoc signed)
-- No telemetry or external data collection; all usage data stays on the local machine
+📊 **Track Your Usage**
+- Monitor token counts from Ollama conversations in real-time
+- Watch input, output, and cached token breakdowns
+- See your 30-day usage patterns at a glance
+- Monthly calendar heat-map to track you usage for every month
+- Track Actual Input/Output tokens & Cache Hit Rate for your local models
+- Your Deepseek account balance tracking
+- Deepseek balance interactive trend chart
 
-## Install
+🔒 **Private & Local**
+- Everything runs on your machine - no data leaves your desktop
+- API keys stored securely in your OS keychain (Keychain/Credential Manager/Secret Service)
+- Full offline functionality - works without internet connection (Deepseek balance tracking will need internet connection)
+
+🖥️ **Native Desktop Experience**
+- Tray-anchored metrics panel always at hand
+- Dashboard with totals, today's streak, and model breakdown
+- Cross-platform: Linux, Windows, and macOS support
+
+## 📦 Install
 
 - [GitHub Releases](https://github.com/siddheshgunjal/TokenFlow/releases/latest) for the latest binary
-- Linux: `.flatpak` (All distrubution), `.deb` (Debian 12+/Ubuntu 22.04+), `.rpm` (Fedora 38+/RHEL 9+), or AppImage
-- Windows: NSIS `.exe` installer (unsigned; SmartScreen may warn on first run)
-- macOS: `.dmg` file (ad-hoc signed; Gatekeeper may block first launch)
-## Quick start
 
-1. Ensure Ollama is running on `127.0.0.1:11434`; verify with `curl http://127.0.0.1:11434/api/tags`
-2. Launch TokenFlow; the Axum proxy binds to `127.0.0.1:11435`; verify with `curl http://127.0.0.1:11435/health`
-3. Point your Ollama client at `http://127.0.0.1:11435` (native) or `/v1` (OpenAI-compatible)
-4. Send a completion request; token counts appear in the dashboard after the final stream chunk
-5. Add a DeepSeek API key via Settings or `DEEPSEEK_API_KEY` environment variable to enable balance polling
+| Platform | Format | Architectures |
+| --- | --- | --- |
+| Linux | `.flatpak` | `x86_64`, `aarch64` |
+| Linux | `.deb` | `x86_64`, `aarch64` |
+| Linux | `.rpm` | `x86_64`, `aarch64` |
+| Linux | AppImage | `x86_64`, `aarch64` |
+| Windows | NSIS `.exe` | `x86_64`, `aarch64` |
+| macOS | `.dmg` | `x86_64`, `aarch64` |
 
-## How it works
+## 🚀 Getting Started
+
+1. Ensure Ollama is running on `127.0.0.1:11434`
+2. Launch TokenFlow and it will automatically proxy requests on `127.0.0.1:11435`
+3. Point your Ollama clients at `http://127.0.0.1:11435` (native) or `/v1` (OpenAI-compatible)
+4. Send completion requests - token counts appear in the dashboard after each stream
+
+## ⚙️ How it works
 
 - Proxy forwards unchanged requests to Ollama on `127.0.0.1:11435`
 - Stream inspector records token counts from NDJSON/SSE response streams
@@ -58,7 +77,7 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 - Records deduplicated by `request_id` via unique SQLite index using `INSERT OR IGNORE`
 - See [ARCHITECTURE.md](ARCHITECTURE.md#how-it-works) for full details
 
-## Privacy
+## 🛡️ Privacy
 
 - Loopback only — proxy listens on `127.0.0.1:11435` only; no network exposure or public accessibility
 - No telemetry or usage data collected, stored, or transmitted beyond necessary API calls
@@ -66,24 +85,22 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 - On startup, legacy plaintext SQLite key rows migrated to OS keychain with read-back verification, then scrubbed with `secure_delete`, WAL checkpoint, and `VACUUM`; if keychain unavailable, legacy key continues working with Settings warning and retry action
 - Only outbound calls are DeepSeek balance requests to `api.deepseek.com` over HTTPS; no other external endpoints contacted
 
-## Documentation
+## 📚 Documentation
 
-- ARCHITECTURE.md — full system design with all 15 design decisions
-- CONTRIBUTING.md — contribution guidelines, development setup, coding standards, PR process
-- RELEASING.md — release process, versioning, checklist, GitHub Actions workflow
-- BRANDING.md — brand guidelines, color palette, logo usage, version change control
-- packaging/README.md — per-format build and install instructions
-- flatpak/README.md — Flatpak build, sandbox permissions, test matrix
-- Website — placeholder until public URL is known
+- [ARCHITECTURE.md](ARCHITECTURE.md) — full system design with all 15 design decisions
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guidelines, development setup, coding standards, PR process
+- [RELEASING.md](RELEASING.md) — release process, versioning, checklist, GitHub Actions workflow
+- [packaging/README.md](packaging/README.md) — per-format build and install instructions
+- [flatpak/README.md](flatpak/README.md) — Flatpak build, sandbox permissions, test matrix
 
-## Contributing
+## 🤝 Contributing
 
 - Code follows existing Rust/TypeScript style; run `cargo fmt/clippy` and `npm run typecheck/build`
 - New features and bug fixes welcome via pull requests; ensure test coverage and updated docs
 - See CODE_OF_CONDUCT.md and SECURITY.md for expected behavior and security reporting
 - Run `cargo test` and `npm test` locally; branch naming: feature/*, bugfix/*, docs/*
 
-## License
+## 📄 License
 
 GPL-3.0-only. See [LICENSE](LICENSE) for full text.
 
