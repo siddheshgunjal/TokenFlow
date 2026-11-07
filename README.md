@@ -33,9 +33,10 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 - Watch input, output, and cached token breakdowns
 - See your 30-day usage patterns at a glance
 - Monthly calendar heat-map to track you usage for every month
+- Click any day to drill into a 24-hour token chart, with All / Top 5 / per-model filters and a token-weighted cache rate
 - Track Actual Input/Output tokens & Cache Hit Rate for your local models
 - Your Deepseek account balance tracking
-- Deepseek balance interactive trend chart
+- Deepseek balance interactive trend chart (Day/Week/Month anchored to the selected day)
 
 🔒 **Private & Local**
 - Everything runs on your machine - no data leaves your desktop
