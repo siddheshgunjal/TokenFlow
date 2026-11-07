@@ -1,96 +1,37 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, lazy, useState } from "react";
 
 import { Icon } from "./components/Icons";
 import { Sidebar, type Page } from "./components/Sidebar";
-import {
-  getDashboard,
-  isTauri,
-  subscribeToUpdates,
-  toggleWidget,
-} from "./lib/api";
-import type { DashboardSummary } from "./lib/types";
+import { isTauri, toggleWidget } from "./lib/api";
+import { useCoreSnapshot } from "./lib/useCoreSnapshot";
 import { Dashboard } from "./pages/Dashboard";
-import { SettingsPage } from "./pages/Settings";
+
+// Settings is only shown on demand; splitting it out of the dashboard bundle
+// keeps the initial render light.
+const SettingsPage = lazy(() =>
+  import("./pages/Settings").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const { snapshot, error, refreshing, refresh } = useCoreSnapshot();
 
-  const refresh = useCallback(async (quiet = false) => {
-    if (!quiet) setRefreshing(true);
-
-    try {
-      const summary = await getDashboard(30);
-      setDashboard(summary);
-      setLastUpdated(Date.now());
-      setError(null);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      if (!quiet) setRefreshing(false);
-    }
+  const handleNavigate = useCallback((next: Page) => {
+    setPage(next);
   }, []);
-
-  useEffect(() => {
-    void refresh(true);
-  }, [refresh]);
-
-  useEffect(() => {
-    let disposed = false;
-    let timer: number | undefined;
-    let unsubscribe: (() => void) | undefined;
-
-    subscribeToUpdates(() => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        void refresh(true);
-      }, 300);
-    })
-      .then((cleanup) => {
-        if (disposed) cleanup();
-        else unsubscribe = cleanup;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
-      unsubscribe?.();
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refresh(true);
-    }, 60_000);
-
-    return () => window.clearInterval(interval);
-  }, [refresh]);
-
-  const handleNavigate = useCallback(
-    (next: Page) => {
-      setPage(next);
-      setError(null);
-      if (next === "dashboard") {
-        void refresh(true);
-      }
-    },
-    [refresh],
-  );
 
   async function handleOpenWidget() {
     try {
       await toggleWidget(true);
     } catch (err) {
-      setError(String(err));
+      console.error("could not open widget", err);
     }
   }
 
-  const proxy = dashboard?.proxy ?? {
+  const proxy = snapshot?.proxy ?? {
     running: false,
     bindAddress: "",
     upstreamUrl: "",
@@ -122,13 +63,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {lastUpdated ? (
+            {snapshot ? (
               <span className="mr-1 hidden text-[12px] text-ink sm:inline">
                 Updated{" "}
-                {new Date(lastUpdated).toLocaleTimeString(undefined, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                {new Date(snapshot.generatedAt * 1000).toLocaleTimeString(
+                  undefined,
+                  {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  },
+                )}
               </span>
             ) : null}
             <button
@@ -178,11 +122,13 @@ export default function App() {
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.2 }}
               >
-                {dashboard ? (
+                {snapshot ? (
                   <Dashboard
-                    data={dashboard}
+                    data={snapshot}
                     onOpenSettings={() => handleNavigate("settings")}
-                    onRefresh={() => void refresh(true)}
+                    onRefresh={() => void refresh()}
+                    error={error}
+                    refreshing={refreshing}
                   />
                 ) : (
                   <DashboardSkeleton />
@@ -196,7 +142,9 @@ export default function App() {
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.2 }}
               >
-                <SettingsPage onSaved={() => void refresh(true)} />
+                <Suspense fallback={<SettingsSkeleton />}>
+                  <SettingsPage onSaved={() => void refresh()} />
+                </Suspense>
               </motion.div>
             )}
           </AnimatePresence>
@@ -225,6 +173,28 @@ function DashboardSkeleton() {
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="card h-72 lg:col-span-2" />
         <div className="card h-72 lg:col-span-3" />
+      </div>
+    </div>
+  );
+}
+
+function SettingsSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4">
+      <div className="card h-40 p-5">
+        <div className="h-2.5 w-40 rounded bg-white/[0.06]" />
+        <div className="mt-4 space-y-3">
+          <div className="h-8 w-full rounded bg-white/[0.05]" />
+          <div className="h-8 w-full rounded bg-white/[0.05]" />
+        </div>
+      </div>
+      <div className="card h-56 p-5">
+        <div className="h-2.5 w-48 rounded bg-white/[0.06]" />
+        <div className="mt-4 space-y-3">
+          <div className="h-8 w-full rounded bg-white/[0.05]" />
+          <div className="h-8 w-full rounded bg-white/[0.05]" />
+          <div className="h-8 w-2/3 rounded bg-white/[0.05]" />
+        </div>
       </div>
     </div>
   );

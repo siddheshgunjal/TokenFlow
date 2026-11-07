@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-shell";
 
 import {
   mockBalanceHistory,
-  mockDashboard,
+  mockCoreSnapshot,
   mockDeepSeekStatus,
   mockSettingsView,
 } from "./mock";
@@ -13,6 +13,7 @@ import type {
   ClearDataResult,
   DashboardSummary,
   DeepSeekStatus,
+  RefreshResult,
   Settings,
   SettingsView,
 } from "./types";
@@ -23,12 +24,49 @@ export const isTauri =
 const delay = (milliseconds: number) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
-export async function getDashboard(days = 30): Promise<DashboardSummary> {
+/**
+ * Returns the core-owned snapshot, building it if absent. This is the single
+ * data path for both windows; there is no per-window range parameter.
+ */
+export async function getCoreSnapshot(): Promise<DashboardSummary> {
   if (!isTauri) {
     await delay(120);
-    return mockDashboard(days);
+    return mockCoreSnapshot();
   }
-  return invoke<DashboardSummary>("get_dashboard", { days });
+  return invoke<DashboardSummary>("get_core_snapshot");
+}
+
+/**
+ * Unified manual refresh. Produces at most one DeepSeek network call and
+ * returns the fresh snapshot plus any non-fatal DeepSeek error.
+ */
+export async function refreshCore(): Promise<RefreshResult> {
+  if (!isTauri) {
+    await delay(500);
+    return { snapshot: mockCoreSnapshot(), deepseekError: null };
+  }
+  return invoke<RefreshResult>("refresh_core");
+}
+
+/**
+ * Subscribes to core snapshot events. The handler receives the full
+ * `DashboardSummary` payload. Returns an unsubscribe function.
+ */
+export async function subscribeToCoreSnapshot(
+  handler: (snapshot: DashboardSummary) => void,
+): Promise<() => void> {
+  if (!isTauri) return () => undefined;
+  return listen<DashboardSummary>("core-snapshot", (event) => {
+    handler(event.payload);
+  });
+}
+
+/**
+ * @deprecated Use `getCoreSnapshot`. Kept for one release so older UI builds
+ * keep working; it ignores `days` and always returns the core-owned range.
+ */
+export async function getDashboard(_days = 30): Promise<DashboardSummary> {
+  return getCoreSnapshot();
 }
 
 export async function getSettings(): Promise<SettingsView> {
@@ -84,14 +122,6 @@ export async function getDeepSeekStatus(): Promise<DeepSeekStatus> {
     return mockDeepSeekStatus;
   }
   return invoke<DeepSeekStatus>("get_deepseek_status");
-}
-
-export async function refreshDeepSeekBalance(): Promise<BalanceSnapshot[]> {
-  if (!isTauri) {
-    await delay(500);
-    return mockDeepSeekStatus.balances;
-  }
-  return invoke<BalanceSnapshot[]>("refresh_deepseek_balance");
 }
 
 export async function getBalanceHistory({
@@ -170,18 +200,9 @@ export async function subscribeToWidgetShown(
   return listen("widget-shown", handler);
 }
 
-export async function subscribeToUpdates(
+export async function subscribeToWidgetHidden(
   handler: () => void,
 ): Promise<() => void> {
   if (!isTauri) return () => undefined;
-
-  const unlisteners = await Promise.all([
-    listen("ollama-usage", handler),
-    listen("deepseek-balance", handler),
-    listen("proxy-status", handler),
-  ]);
-
-  return () => {
-    for (const unlisten of unlisteners) unlisten();
-  };
+  return listen("widget-hidden", handler);
 }

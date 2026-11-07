@@ -68,6 +68,8 @@ export interface ProxyStatus {
 }
 
 export interface DashboardSummary {
+  /** Monotonic; increments on every core rebuild. Used to discard stale events. */
+  revision: number;
   generatedAt: number;
   rangeDays: number;
   totals: Totals;
@@ -79,6 +81,13 @@ export interface DashboardSummary {
   proxy: ProxyStatus;
 }
 
+/** Result of a unified manual refresh. The snapshot is always valid. */
+export interface RefreshResult {
+  snapshot: DashboardSummary;
+  /** Non-fatal DeepSeek failure. The snapshot is still valid. */
+  deepseekError: string | null;
+}
+
 export interface Settings {
   upstreamUrl: string;
   proxyPort: number;
@@ -88,6 +97,8 @@ export interface Settings {
   closeToTray: boolean;
   widgetAlwaysOnTop: boolean;
   showWidgetOnStart: boolean;
+  /** Destroy the hidden widget after this many seconds; 0 keeps it warm. */
+  widgetEvictionSecs: number;
   launchAtLogin: boolean;
 }
 

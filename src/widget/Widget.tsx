@@ -1,16 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
 import { Icon } from "../components/Icons";
 import { Logo } from "../components/Logo";
-import {
-  getDashboard,
-  quitApp,
-  refreshDeepSeekBalance,
-  showMainWindow,
-  subscribeToUpdates,
-  subscribeToWidgetShown,
-  toggleWidget,
-} from "../lib/api";
+import { quitApp, showMainWindow, toggleWidget } from "../lib/api";
 import {
   formatCompact,
   formatMoney,
@@ -19,82 +11,13 @@ import {
   formatRelative,
   classNames,
 } from "../lib/format";
-import type { DashboardSummary } from "../lib/types";
+import { useCoreSnapshot } from "../lib/useCoreSnapshot";
 
 export function Widget() {
-  const [data, setData] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { snapshot: data, refreshing, refresh } = useCoreSnapshot();
 
-  const refresh = useCallback(async () => {
-    try {
-      const summary = await getDashboard(7);
-      setData(summary);
-      setError(null);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
+  const handleManualRefresh = useCallback(() => {
     void refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, 30_000);
-
-    return () => window.clearInterval(interval);
-  }, [refresh]);
-
-  // Hidden webviews throttle timers, so refresh as soon as the tray reveals
-  // the widget. `widget-shown` is emitted by the Rust `toggle_widget` path that
-  // every platform uses when opening the panel.
-  useEffect(() => {
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
-
-    subscribeToWidgetShown(() => {
-      void refresh();
-    })
-      .then((cleanup) => {
-        if (disposed) cleanup();
-        else unsubscribe = cleanup;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      unsubscribe?.();
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    let disposed = false;
-    let timer: number | undefined;
-    let unsubscribe: (() => void) | undefined;
-
-    subscribeToUpdates(() => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        void refresh();
-      }, 250);
-    })
-      .then((cleanup) => {
-        if (disposed) cleanup();
-        else unsubscribe = cleanup;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
-      unsubscribe?.();
-    };
   }, [refresh]);
 
   async function handleOpenDashboard() {
@@ -102,17 +25,7 @@ export function Widget() {
       await showMainWindow();
       await toggleWidget(false);
     } catch (err) {
-      setError(String(err));
-    }
-  }
-
-  async function handleManualRefresh() {
-    setRefreshing(true);
-    try {
-      await Promise.allSettled([refreshDeepSeekBalance(), refresh()]);
-      await refresh();
-    } finally {
-      setRefreshing(false);
+      console.error("could not open dashboard", err);
     }
   }
 
@@ -120,7 +33,7 @@ export function Widget() {
     try {
       await quitApp();
     } catch (err) {
-      setError(String(err));
+      console.error("could not quit", err);
     }
   }
 
@@ -195,7 +108,9 @@ export function Widget() {
             <button
               type="button"
               onClick={() => {
-                void toggleWidget(false).catch((err) => setError(String(err)));
+                void toggleWidget(false).catch((err) =>
+                  console.error("could not hide widget", err),
+                );
               }}
               aria-label="Hide widget"
               className="grid h-6 w-6 place-items-center rounded-md text-muted transition-colors hover:bg-white/[0.06] hover:text-muted"
@@ -206,28 +121,23 @@ export function Widget() {
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-2.5">
-          {loading ? (
-            <div className="animate-pulse space-y-3">
-              <div className="h-3 w-16 rounded bg-white/[0.06]" />
-              <div className="grid grid-cols-2 gap-3">
-                <div className="h-12 rounded bg-white/[0.06]" />
-                <div className="h-12 rounded bg-white/[0.04]" />
+          {!data ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2">
+              <div className="animate-pulse w-full space-y-3">
+                <div className="h-3 w-16 rounded bg-white/[0.06]" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="h-12 rounded bg-white/[0.06]" />
+                  <div className="h-12 rounded bg-white/[0.04]" />
+                </div>
+                <div className="h-10 rounded bg-white/[0.03]" />
+                <div className="h-9 rounded bg-white/[0.03]" />
               </div>
-              <div className="h-10 rounded bg-white/[0.03]" />
-              <div className="h-9 rounded bg-white/[0.03]" />
-            </div>
-          ) : error && !data ? (
-            <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <Icon name="alert" className="h-5 w-5 text-danger" />
-              <p className="mt-2 text-[12px] text-muted">
-                Could not load usage
-              </p>
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="mt-2 text-[12px] text-accent hover:text-white"
+                className="text-[12px] text-accent hover:text-white"
               >
-                Try again
+                Load usage
               </button>
             </div>
           ) : data ? (

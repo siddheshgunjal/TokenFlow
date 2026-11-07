@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 
-import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { DeepSeekCard } from "../components/DeepSeekCard";
 import { Icon } from "../components/Icons";
 import { ModelBreakdown } from "../components/ModelBreakdown";
@@ -9,14 +8,28 @@ import { StatCard } from "../components/StatCard";
 import { formatCompact, formatNumber, formatPercent } from "../lib/format";
 import type { DashboardSummary } from "../lib/types";
 
+// The heatmap renders 365 cells; splitting it out of the dashboard bundle
+// keeps first paint fast.
+const ActivityHeatmap = lazy(() =>
+  import("../components/ActivityHeatmap").then((module) => ({
+    default: module.ActivityHeatmap,
+  })),
+);
+
 export function Dashboard({
   data,
   onOpenSettings,
   onRefresh,
+  error,
+  refreshing = false,
 }: {
   data: DashboardSummary;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  /** Non-fatal DeepSeek error from the core snapshot. */
+  error: string | null;
+  /** Shared refresh-in-progress flag. */
+  refreshing?: boolean;
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
   const balance = data.latestBalance;
@@ -115,12 +128,14 @@ export function Dashboard({
 
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="min-w-0 lg:col-span-3">
-          <ActivityHeatmap
-            daily={data.daily}
-            streakDays={data.streakDays}
-            monthOffset={monthOffset}
-            onMonthOffsetChange={setMonthOffset}
-          />
+          <Suspense fallback={<HeatmapSkeleton />}>
+            <ActivityHeatmap
+              daily={data.daily}
+              streakDays={data.streakDays}
+              monthOffset={monthOffset}
+              onMonthOffsetChange={setMonthOffset}
+            />
+          </Suspense>
         </div>
         <div className="min-w-0 lg:col-span-2">
           <DeepSeekCard
@@ -128,6 +143,8 @@ export function Dashboard({
             monthOffset={monthOffset}
             onRefreshed={onRefresh}
             onOpenSettings={onOpenSettings}
+            error={error}
+            refreshing={refreshing}
           />
         </div>
       </div>
@@ -139,6 +156,19 @@ export function Dashboard({
         <div className="min-h-0 min-w-0 lg:col-span-3">
           <RecentRequests logs={data.recent} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function HeatmapSkeleton() {
+  return (
+    <div className="card h-64 animate-pulse p-5">
+      <div className="h-2.5 w-32 rounded bg-white/[0.06]" />
+      <div className="mt-4 space-y-2">
+        <div className="h-3 w-full rounded bg-white/[0.04]" />
+        <div className="h-3 w-full rounded bg-white/[0.04]" />
+        <div className="h-3 w-4/5 rounded bg-white/[0.04]" />
       </div>
     </div>
   );
