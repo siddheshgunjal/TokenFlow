@@ -1,8 +1,10 @@
 import type {
   BalanceSnapshot,
   DailyUsage,
+  DayUsageDetail,
   DashboardSummary,
   DeepSeekStatus,
+  ModelHourlyUsage,
   ModelUsage,
   OllamaLog,
   Settings,
@@ -16,6 +18,10 @@ const MODEL_NAMES = [
   "deepseek-r1:8b",
   "mistral:7b",
 ];
+
+// Model share of a day's tokens; mirrors `buildModels` so the day-detail mock
+// splits the same way the 30-day snapshot does.
+const MODEL_SHARES = [0.44, 0.28, 0.18, 0.1];
 
 // Deterministic pseudo-random values keep the browser preview stable across
 // refreshes. Real data always comes from the Rust backend.
@@ -74,10 +80,9 @@ function buildModels(
   newInputTokens: number,
   totalRequests: number,
 ): ModelUsage[] {
-  const shares = [0.44, 0.28, 0.18, 0.1];
   return MODEL_NAMES.map((model, index) => {
-    const total = Math.floor(totalTokens * shares[index]);
-    const newInput = Math.floor(newInputTokens * shares[index]);
+    const total = Math.floor(totalTokens * MODEL_SHARES[index]);
+    const newInput = Math.floor(newInputTokens * MODEL_SHARES[index]);
     const output = Math.max(0, total - newInput);
     const context = Math.floor(newInput * (2.2 + index * 0.6)) + 512;
     const cached = Math.floor(context * (0.24 + index * 0.07));
@@ -88,7 +93,7 @@ function buildModels(
       contextTokens: context,
       cachedInputTokens: cached,
       totalTokens: total,
-      requests: Math.floor(totalRequests * shares[index]),
+      requests: Math.floor(totalRequests * MODEL_SHARES[index]),
       cacheHitRate: context > 0 ? Math.min(1, cached / context) : 0,
     };
   });
@@ -98,6 +103,165 @@ let mockRev = 0;
 function mockRevision(): number {
   mockRev += 1;
   return mockRev;
+}
+
+/**
+ * Deterministically distributes `total` across `weights.length` slots weighted
+ * by `weights`, using a largest-remainder allocation so the integer sum is
+ * exactly `total`.
+ */
+function distribute(total: number, weights: number[]): number[] {
+  if (total <= 0) return new Array(weights.length).fill(0);
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  if (weightSum <= 0) return new Array(weights.length).fill(0);
+
+  const raw = weights.map((weight) => (total * weight) / weightSum);
+  const allocated = raw.map((value) => Math.floor(value));
+  let remainder = total - allocated.reduce((sum, value) => sum + value, 0);
+
+  const byFraction = raw
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((left, right) => right.fraction - left.fraction);
+
+  let position = 0;
+  while (remainder > 0) {
+    allocated[byFraction[position % byFraction.length].index] += 1;
+    remainder -= 1;
+    position += 1;
+  }
+
+  return allocated;
+}
+
+/**
+ * A deterministic 24-hour activity curve: low overnight, peaking in the late
+ * morning and evening. Seeded per day so the browser preview is stable.
+ */
+function activityWeights(seed: number): number[] {
+  const weights: number[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    const dayness = Math.sin(((hour - 6) / 24) * Math.PI * 2);
+    weights.push(0.15 + Math.max(0, dayness) + noise(seed + hour) * 0.4);
+  }
+  return weights;
+}
+
+function seedForDateKey(date: string): number {
+  let seed = 0;
+  for (let index = 0; index < date.length; index += 1) {
+    seed = (seed * 31 + date.charCodeAt(index)) % 1_000_000;
+  }
+  return seed;
+}
+
+function zeroedHours(): ModelHourlyUsage["hours"] {
+  return new Array(24).fill(0).map((_, hour) => ({
+    hour,
+    newInputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    requests: 0,
+    contextProcessedTokens: 0,
+    cachedProcessedTokens: 0,
+    cacheHitRate: 0,
+  }));
+}
+
+/**
+ * Browser-preview stand-in for `get_day_usage_detail`. Splits the matching
+ * `DailyUsage` day across 24 hours and the four mock models so panel totals
+ * exactly match the calendar day.
+ */
+export function mockDayUsageDetail(date: string): DayUsageDetail {
+  const day = buildDaily().find((entry) => entry.date === date);
+
+  if (!day || day.requests === 0) {
+    return { date, hours: zeroedHours(), models: [] };
+  }
+
+  const seed = seedForDateKey(date);
+  const hourWeights = activityWeights(seed);
+
+  const modelTotals = distribute(day.totalTokens, MODEL_SHARES);
+  const modelNewInput = distribute(day.newInputTokens, MODEL_SHARES);
+  const modelContext = distribute(day.contextProcessedTokens, MODEL_SHARES);
+  const modelCached = distribute(day.cachedProcessedTokens, MODEL_SHARES);
+  const modelRequests = distribute(day.requests, MODEL_SHARES);
+
+  const models: ModelHourlyUsage[] = MODEL_NAMES.map((model, index) => {
+    const hourTotals = distribute(modelTotals[index], hourWeights);
+    const hourNewInput = distribute(modelNewInput[index], hourWeights);
+    const hourContext = distribute(modelContext[index], hourWeights);
+    const hourCached = distribute(modelCached[index], hourWeights);
+    const hourRequests = distribute(modelRequests[index], hourWeights);
+
+    const hours = hourTotals.map((total, hour) => {
+      const newInputTokens = hourNewInput[hour];
+      const contextProcessedTokens = hourContext[hour];
+      const cachedProcessedTokens = Math.min(
+        contextProcessedTokens,
+        hourCached[hour],
+      );
+      return {
+        hour,
+        newInputTokens,
+        outputTokens: total - newInputTokens,
+        totalTokens: total,
+        requests: hourRequests[hour],
+        contextProcessedTokens,
+        cachedProcessedTokens,
+        cacheHitRate:
+          contextProcessedTokens > 0
+            ? cachedProcessedTokens / contextProcessedTokens
+            : 0,
+      };
+    });
+
+    return { model, hours };
+  });
+
+  // All-model hours are derived by summing the per-model buckets so the panel
+  // totals always match the calendar day.
+  const hours: DayUsageDetail["hours"] = new Array(24)
+    .fill(0)
+    .map((_, hour) => {
+      const newInputTokens = models.reduce(
+        (sum, model) => sum + model.hours[hour].newInputTokens,
+        0,
+      );
+      const outputTokens = models.reduce(
+        (sum, model) => sum + model.hours[hour].outputTokens,
+        0,
+      );
+      const requests = models.reduce(
+        (sum, model) => sum + model.hours[hour].requests,
+        0,
+      );
+      const contextProcessedTokens = models.reduce(
+        (sum, model) => sum + model.hours[hour].contextProcessedTokens,
+        0,
+      );
+      const cachedProcessedTokens = models.reduce(
+        (sum, model) => sum + model.hours[hour].cachedProcessedTokens,
+        0,
+      );
+      const totalTokens = newInputTokens + outputTokens;
+      return {
+        hour,
+        newInputTokens,
+        outputTokens,
+        totalTokens,
+        requests,
+        contextProcessedTokens,
+        cachedProcessedTokens,
+        cacheHitRate:
+          contextProcessedTokens > 0
+            ? cachedProcessedTokens / contextProcessedTokens
+            : 0,
+      };
+    });
+
+  return { date, hours, models };
 }
 
 export function mockCoreSnapshot(): DashboardSummary {

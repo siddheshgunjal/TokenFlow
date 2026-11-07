@@ -1,16 +1,16 @@
 import { motion } from "framer-motion";
 
 import { formatCompact, formatNumber, formatPercent } from "../lib/format";
+import { colorForModel, type ModelColor } from "../lib/modelColors";
 import type { ModelUsage } from "../lib/types";
 
-const BAR_STYLES = [
-  "bg-gradient-to-r from-accent to-accent/50",
-  "bg-gradient-to-r from-accent-blue to-accent-blue/50",
-  "bg-gradient-to-r from-accent-strong to-accent-strong/50",
-  "bg-gradient-to-r from-warning to-warning/50",
-];
-
-export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
+export function ModelBreakdown({
+  models,
+  modelColors,
+}: {
+  models: ModelUsage[];
+  modelColors: Map<string, ModelColor>;
+}) {
   const maxTokens = Math.max(...models.map((model) => model.totalTokens), 1);
   const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
 
@@ -48,6 +48,7 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
               totalTokens > 0
                 ? Math.round((modelInference / totalTokens) * 100)
                 : 0;
+            const color = colorForModel(modelColors, model.model);
 
             return (
               <div key={model.model}>
@@ -68,7 +69,10 @@ export function ModelBreakdown({ models }: { models: ModelUsage[] }) {
                       delay: index * 0.06,
                       ease: [0.22, 1, 0.36, 1],
                     }}
-                    className={`h-full rounded-full ${BAR_STYLES[index % BAR_STYLES.length]}`}
+                    className="h-full rounded-full"
+                    style={{
+                      backgroundImage: `linear-gradient(90deg, ${color.hex}, ${color.hex}80)`,
+                    }}
                   />
                 </div>
                 <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted">

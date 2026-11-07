@@ -38,6 +38,39 @@ export interface DailyUsage {
   cacheHitRate: number;
 }
 
+/** Per-hour token bucket for a single day. */
+export interface HourlyUsage {
+  /** Local hour, 0–23. */
+  hour: number;
+  newInputTokens: number;
+  outputTokens: number;
+  /** newInputTokens + outputTokens. */
+  totalTokens: number;
+  requests: number;
+  /** Sum of per-request prompt sizes this hour. Cache-rate denominator. */
+  contextProcessedTokens: number;
+  /** Sum of cached prefixes this hour. Cache-rate numerator. */
+  cachedProcessedTokens: number;
+  /** Token-weighted cache share, 0.0–1.0. */
+  cacheHitRate: number;
+}
+
+/** Per-model hourly buckets for one day. Always 24 entries, hour 0–23. */
+export interface ModelHourlyUsage {
+  model: string;
+  hours: HourlyUsage[];
+}
+
+/** Read-only, lazy payload for one calendar day. Not part of `DashboardSummary`. */
+export interface DayUsageDetail {
+  /** Local calendar date in `YYYY-MM-DD` format. */
+  date: string;
+  /** Always 24 entries, hour 0–23, all models combined. */
+  hours: HourlyUsage[];
+  /** Models active that day, sorted by total tokens desc, then model asc. */
+  models: ModelHourlyUsage[];
+}
+
 export interface OllamaLog {
   id: number;
   model: string;

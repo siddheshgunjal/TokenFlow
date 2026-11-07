@@ -15,14 +15,15 @@ const BalanceChart = lazy(() =>
 
 export function DeepSeekCard({
   balance,
-  monthOffset,
+  selectedDate,
   onRefreshed,
   onOpenSettings,
   error,
   refreshing = false,
 }: {
   balance: BalanceSnapshot | null;
-  monthOffset: number;
+  /** The selected day (`YYYY-MM-DD`); anchors the balance trend ranges. */
+  selectedDate: string;
   onRefreshed: () => void;
   onOpenSettings: () => void;
   /** Non-fatal DeepSeek error surfaced by the core snapshot refresh. */
@@ -98,7 +99,7 @@ export function DeepSeekCard({
             <Suspense fallback={<BalanceChartSkeleton />}>
               <BalanceChart
                 currency={balance.currency}
-                monthOffset={monthOffset}
+                selectedDate={selectedDate}
                 refreshKey={balance.createdAt}
               />
             </Suspense>

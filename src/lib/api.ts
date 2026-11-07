@@ -5,12 +5,14 @@ import { open } from "@tauri-apps/plugin-shell";
 import {
   mockBalanceHistory,
   mockCoreSnapshot,
+  mockDayUsageDetail,
   mockDeepSeekStatus,
   mockSettingsView,
 } from "./mock";
 import type {
   BalanceSnapshot,
   ClearDataResult,
+  DayUsageDetail,
   DashboardSummary,
   DeepSeekStatus,
   RefreshResult,
@@ -150,6 +152,18 @@ export async function clearUsageData(): Promise<ClearDataResult> {
     return { ollamaLogs: 1284, deepseekBalances: 96 };
   }
   return invoke<ClearDataResult>("clear_usage_data");
+}
+
+/**
+ * Lazy, read-only per-hour breakdown for one local calendar day. Not part of
+ * the core snapshot; computed on demand for the day drill-down panel.
+ */
+export async function getDayUsageDetail(date: string): Promise<DayUsageDetail> {
+  if (!isTauri) {
+    await delay(120);
+    return mockDayUsageDetail(date);
+  }
+  return invoke<DayUsageDetail>("get_day_usage_detail", { date });
 }
 
 export async function showMainWindow(): Promise<void> {

@@ -1,11 +1,18 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 
 import { DeepSeekCard } from "../components/DeepSeekCard";
 import { Icon } from "../components/Icons";
 import { ModelBreakdown } from "../components/ModelBreakdown";
 import { RecentRequests } from "../components/RecentRequests";
 import { StatCard } from "../components/StatCard";
-import { formatCompact, formatNumber, formatPercent } from "../lib/format";
+import {
+  dateKeyForMonthOffset,
+  formatCompact,
+  formatNumber,
+  formatPercent,
+  todayKey,
+} from "../lib/format";
+import { buildModelColorMap } from "../lib/modelColors";
 import type { DashboardSummary } from "../lib/types";
 
 // The heatmap renders 365 cells; splitting it out of the dashboard bundle
@@ -32,10 +39,32 @@ export function Dashboard({
   refreshing?: boolean;
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
+  // The selected day defaults to today and is always present: the day-detail
+  // panel has no nullable state.
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayKey());
   const balance = data.latestBalance;
   const proxyUrl = data.proxy.bindAddress
     ? `http://${data.proxy.bindAddress}`
     : "http://127.0.0.1:11435";
+
+  // One color map per snapshot drives both the Models card and the day-detail
+  // chart so a model's color is identical in both.
+  const modelColors = useMemo(
+    () => buildModelColorMap(data.models),
+    [data.models],
+  );
+
+  function handleMonthOffsetChange(nextOffset: number) {
+    setMonthOffset(nextOffset);
+    setSelectedDate((current) => dateKeyForMonthOffset(current, nextOffset));
+  }
+
+  // Kept separate from month navigation so "Today" always selects today, even
+  // when the current selection is already in the current month.
+  function handleGoToToday() {
+    setMonthOffset(0);
+    setSelectedDate(todayKey());
+  }
 
   return (
     <div className="space-y-4">
@@ -133,14 +162,20 @@ export function Dashboard({
               daily={data.daily}
               streakDays={data.streakDays}
               monthOffset={monthOffset}
-              onMonthOffsetChange={setMonthOffset}
+              onMonthOffsetChange={handleMonthOffsetChange}
+              onGoToToday={handleGoToToday}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              models={data.models}
+              modelColors={modelColors}
+              detailRefreshKey={data.revision}
             />
           </Suspense>
         </div>
         <div className="min-w-0 lg:col-span-2">
           <DeepSeekCard
             balance={balance}
-            monthOffset={monthOffset}
+            selectedDate={selectedDate}
             onRefreshed={onRefresh}
             onOpenSettings={onOpenSettings}
             error={error}
@@ -151,7 +186,7 @@ export function Dashboard({
 
       <div className="grid auto-rows-[24rem] gap-4 lg:grid-cols-5">
         <div className="min-h-0 min-w-0 lg:col-span-2">
-          <ModelBreakdown models={data.models} />
+          <ModelBreakdown models={data.models} modelColors={modelColors} />
         </div>
         <div className="min-h-0 min-w-0 lg:col-span-3">
           <RecentRequests logs={data.recent} />

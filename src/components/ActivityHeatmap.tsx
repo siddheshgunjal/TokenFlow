@@ -1,12 +1,14 @@
 import { useState } from "react";
 
+import { DayDetailPanel } from "./DayDetailPanel";
 import {
   formatCompact,
   formatNumber,
   formatPercent,
   toDateKey,
 } from "../lib/format";
-import type { DailyUsage } from "../lib/types";
+import { type ModelColor } from "../lib/modelColors";
+import type { DailyUsage, ModelUsage } from "../lib/types";
 import { Icon } from "./Icons";
 
 type Metric = "total" | "input" | "output" | "utilization";
@@ -81,11 +83,26 @@ export function ActivityHeatmap({
   streakDays,
   monthOffset,
   onMonthOffsetChange,
+  onGoToToday,
+  selectedDate,
+  onSelectDate,
+  models,
+  modelColors,
+  detailRefreshKey,
 }: {
   daily: DailyUsage[];
   streakDays: number;
   monthOffset: number;
   onMonthOffsetChange: (offset: number) => void;
+  /** Always selects today; kept separate from month navigation. */
+  onGoToToday: () => void;
+  /** The selected day (`YYYY-MM-DD`); always present. */
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  models: ModelUsage[];
+  modelColors: Map<string, ModelColor>;
+  /** The core revision; used to refetch today's detail as usage arrives. */
+  detailRefreshKey: number;
 }) {
   const [metric, setMetric] = useState<Metric>("total");
 
@@ -264,7 +281,7 @@ export function ActivityHeatmap({
         {!isCurrentMonth ? (
           <button
             type="button"
-            onClick={() => onMonthOffsetChange(0)}
+            onClick={onGoToToday}
             className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[12px] font-medium text-muted transition-colors hover:bg-white/[0.06] hover:text-muted"
           >
             Today
@@ -283,8 +300,8 @@ export function ActivityHeatmap({
 
         <div
           className="mt-1 grid grid-cols-7 gap-1"
-          role="img"
-          aria-label={`Calendar heatmap of daily ${metricInfo.description} for ${monthLabel}`}
+          role="group"
+          aria-label={`Select a day for hourly detail in ${monthLabel}`}
         >
           {calendarCells.map((cell, index) => {
             if (!cell) {
@@ -299,6 +316,7 @@ export function ActivityHeatmap({
             const value = valueFor(cell.usage, metric);
             const isToday = isCurrentMonth && cell.key === todayKey;
             const isFuture = cell.date.getTime() > today.getTime();
+            const isSelected = cell.key === selectedDate;
             const level = isFuture ? 0 : levelFor(value);
             const levelStyle = isFuture
               ? "border-white/[0.02] bg-transparent"
@@ -332,12 +350,31 @@ export function ActivityHeatmap({
                 : `${dateLabel} · no usage`;
 
             return (
-              <div
+              <button
                 key={cell.key}
+                type="button"
+                disabled={isFuture}
+                onClick={() => onSelectDate(cell.key)}
                 title={tooltip}
-                className={`flex min-h-[60px] min-w-0 flex-col items-start justify-between gap-1 rounded-lg border ${
+                aria-pressed={isSelected}
+                aria-label={
+                  isFuture
+                    ? `${dateLabel}, upcoming`
+                    : `Select ${dateLabel} for hourly detail`
+                }
+                className={`flex min-h-[60px] min-w-0 flex-col items-start justify-between gap-1 rounded-lg border text-left transition-shadow ${
                   levelStyle
-                } ${isToday ? "ring-1 ring-accent/60 ring-offset-panel" : ""}`}
+                } ${isToday ? "ring-1 ring-accent/60 ring-offset-panel" : ""} ${
+                  isSelected
+                    ? "relative z-10 outline outline-2 outline-accent outline-offset-2"
+                    : ""
+                } ${
+                  isFuture
+                    ? "cursor-not-allowed"
+                    : isSelected
+                      ? "cursor-pointer"
+                      : "cursor-pointer hover:brightness-125"
+                }`}
               >
                 <span
                   className={`text-[12px] leading-none tabular-nums ${dayTextClass}`}
@@ -353,7 +390,7 @@ export function ActivityHeatmap({
                     {formatMetricValue(value)}
                   </span>
                 ) : null}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -371,6 +408,15 @@ export function ActivityHeatmap({
           ))}
           <span>More</span>
         </div>
+      </div>
+
+      <div className="mt-4 border-t border-white/[0.06] pt-4">
+        <DayDetailPanel
+          date={selectedDate}
+          models={models}
+          modelColors={modelColors}
+          refreshKey={detailRefreshKey}
+        />
       </div>
     </section>
   );

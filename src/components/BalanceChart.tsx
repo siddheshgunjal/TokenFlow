@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { getBalanceHistory } from "../lib/api";
-import { formatMoney } from "../lib/format";
+import { formatMoney, parseDateKey } from "../lib/format";
 import type { BalanceSnapshot } from "../lib/types";
 import { Icon } from "./Icons";
+import { SelectDropdown, type SelectOption } from "./SelectDropdown";
 
 type ChartRange = "month" | "week" | "day";
 
-const RANGE_OPTIONS: Array<{ id: ChartRange; label: string }> = [
-  { id: "month", label: "Month" },
-  { id: "week", label: "Week" },
-  { id: "day", label: "Day" },
+const RANGE_OPTIONS: Array<SelectOption> = [
+  { value: "month", label: "Month" },
+  { value: "week", label: "Week" },
+  { value: "day", label: "Day" },
 ];
 
 const MAX_POINTS = 180;
@@ -55,11 +56,12 @@ function formatPointTime(at: number, range: ChartRange): string {
   return shortDate(date);
 }
 
-function rangeFor(range: ChartRange, monthOffset: number): RangeBounds {
-  const now = new Date();
+function rangeFor(range: ChartRange, selectedDate: string): RangeBounds {
+  // Anchor to the selected day at local noon so DST edges are unambiguous.
+  const anchor = parseDateKey(selectedDate);
 
   if (range === "month") {
-    const since = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    const since = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
     const until = new Date(since.getFullYear(), since.getMonth() + 1, 1);
     const lastDay = new Date(since.getFullYear(), since.getMonth() + 1, 0);
     const mid = new Date((since.getTime() + lastDay.getTime()) / 2);
@@ -76,7 +78,7 @@ function rangeFor(range: ChartRange, monthOffset: number): RangeBounds {
   }
 
   if (range === "week") {
-    const since = startOfWeek(now);
+    const since = startOfWeek(anchor);
     const until = new Date(since);
     until.setDate(until.getDate() + 7);
     const mid = new Date(since);
@@ -92,14 +94,14 @@ function rangeFor(range: ChartRange, monthOffset: number): RangeBounds {
     };
   }
 
-  const since = startOfDay(now);
+  const since = startOfDay(anchor);
   const until = new Date(since);
   until.setDate(until.getDate() + 1);
 
   return {
     since,
     until,
-    label: now.toLocaleDateString(undefined, {
+    label: anchor.toLocaleDateString(undefined, {
       weekday: "long",
       month: "short",
       day: "numeric",
@@ -144,11 +146,12 @@ function toSeries(
 
 export function BalanceChart({
   currency,
-  monthOffset,
+  selectedDate,
   refreshKey,
 }: {
   currency: string;
-  monthOffset: number;
+  /** The selected day (`YYYY-MM-DD`); anchors the Day/Week/Month ranges. */
+  selectedDate: string;
   refreshKey: number;
 }) {
   const [range, setRange] = useState<ChartRange>("day");
@@ -160,12 +163,13 @@ export function BalanceChart({
     null,
   );
   const [hoverPoint, setHoverPoint] = useState<SeriesPoint | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number>(-1);
   const plotRef = useRef<HTMLDivElement>(null);
   const calendarDay = new Date().toDateString();
 
   const bounds = useMemo(
-    () => rangeFor(range, monthOffset),
-    [range, monthOffset, refreshKey, calendarDay],
+    () => rangeFor(range, selectedDate),
+    [range, selectedDate, refreshKey, calendarDay],
   );
   const since = Math.floor(bounds.since.getTime() / 1000);
   const until = Math.floor(bounds.until.getTime() / 1000);
@@ -256,12 +260,21 @@ export function BalanceChart({
     const index = chart.points.indexOf(nearest);
     setHover({ xPct: nearest.x, yPct: nearest.y });
     setHoverPoint(series[index]);
+    setHoverIndex(index);
   };
 
   const handleChartLeave = () => {
     setHover(null);
     setHoverPoint(null);
+    setHoverIndex(-1);
   };
+
+  // Per-sample delta vs the previous point, so spend is visible in the hover
+  // tooltip without adding a second series or changing the y-axis.
+  const hoverDelta =
+    hoverPoint && hoverIndex > 0 && series[hoverIndex - 1]
+      ? hoverPoint.value - series[hoverIndex - 1].value
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -271,25 +284,12 @@ export function BalanceChart({
           <p className="text-sm text-muted">{bounds.label}</p>
         </div>
         <div className="relative shrink-0">
-          <select
+          <SelectDropdown
             value={range}
-            onChange={(event) => setRange(event.target.value as ChartRange)}
-            aria-label="Balance chart range"
-            className="appearance-none rounded-md border border-white/10 bg-[#0b1220] py-1 pl-2.5 pr-7 text-[12px] font-medium text-muted outline-none transition-colors hover:bg-white/[0.05] focus:border-accent/50"
-          >
-            {RANGE_OPTIONS.map((option) => (
-              <option
-                key={option.id}
-                value={option.id}
-                className="bg-[#0b1220] text-muted"
-              >
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <Icon
-            name="chevron-right"
-            className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-muted"
+            onChange={(next) => setRange(next as ChartRange)}
+            ariaLabel="Balance chart range"
+            groups={[{ label: "", options: RANGE_OPTIONS }]}
+            minWidth="7rem"
           />
         </div>
       </div>
@@ -313,7 +313,9 @@ export function BalanceChart({
       ) : !chart ? (
         <div className="mt-3 flex min-h-[120px] flex-1 flex-col items-center justify-center rounded-xl border border-white/[0.015] px-4 py-5 text-center">
           <Icon name="activity" className="h-4 w-4 text-muted/70" />
-          <p className="mt-2 text-xs text-muted">No balance samples yet</p>
+          <p className="mt-2 text-xs text-muted">
+            No balance samples for this period
+          </p>
           <p className="mt-1 text-[10px] leading-relaxed text-muted">
             TokenFlow records a balance point every time it polls DeepSeek.
           </p>
@@ -415,6 +417,12 @@ export function BalanceChart({
                 </p>
                 <p className="whitespace-nowrap text-[10px] text-muted">
                   {formatPointTime(hoverPoint.at, range)}
+                  {hoverDelta !== null
+                    ? ` · ${hoverDelta >= 0 ? "+" : "-"}${formatMoney(
+                        Math.abs(hoverDelta).toFixed(2),
+                        currency,
+                      )} since the previous sample`
+                    : ""}
                 </p>
               </div>
             ) : null}
