@@ -90,7 +90,7 @@ CI runs `npm run flatpak:sources:check` on every pull request. It fails when
 ## Install and run
 
 ```bash
-flatpak install --user ./release/TokenFlow-0.1.0-linux-x86_64.flatpak
+flatpak install --user ./release/TokenFlow-0.1.0+alpha.1-linux-x86_64.flatpak
 flatpak run io.github.siddheshgunjal.TokenFlow
 ```
 
