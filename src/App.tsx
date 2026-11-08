@@ -23,6 +23,12 @@ export default function App() {
     setPage(next);
   }, []);
 
+  // Stable so the memoized dashboard cards skip re-renders when only data
+  // unrelated to them changes.
+  const openSettings = useCallback(() => {
+    handleNavigate("settings");
+  }, [handleNavigate]);
+
   async function handleOpenWidget() {
     try {
       await toggleWidget(true);
@@ -125,8 +131,8 @@ export default function App() {
                 {snapshot ? (
                   <Dashboard
                     data={snapshot}
-                    onOpenSettings={() => handleNavigate("settings")}
-                    onRefresh={() => void refresh()}
+                    onOpenSettings={openSettings}
+                    onRefresh={refresh}
                     error={error}
                     refreshing={refreshing}
                   />

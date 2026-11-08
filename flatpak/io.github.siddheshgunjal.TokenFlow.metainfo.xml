@@ -1,14 +1,17 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <component type="desktop-application">
   <id>io.github.siddheshgunjal.TokenFlow</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>TokenFlow</name>
-  <summary>Local token usage analytics for Ollama and DeepSeek</summary>
+  <summary
+    >Local desktop application to track Ollama and DeepSeek usage</summary>
   <developer id="io.github.siddheshgunjal">
     <name>TokenFlow contributors</name>
   </developer>
-  <launchable type="desktop-id">io.github.siddheshgunjal.TokenFlow.desktop</launchable>
+  <launchable
+        type="desktop-id"
+    >io.github.siddheshgunjal.TokenFlow.desktop</launchable>
   <url type="homepage">https://github.com/siddheshgunjal/TokenFlow</url>
   <branding>
     <color type="primary">#00D4C0</color>
@@ -20,27 +23,43 @@
       counts reported by the stream, and polls the DeepSeek balance API.
     </p>
     <p>
-      Usage history is stored in a local SQLite database, and the DeepSeek API
-      key is kept in the operating system credential store. Telemetry never
-      leaves the machine.
+      Everything stays local and the DeepSeek API key is kept in the
+      operating system credential store. Telemetry never leaves the machine.
     </p>
+    <p><strong>Track Your Usage</strong></p>
     <ul>
-      <li>Ollama proxy on 127.0.0.1:11435</li>
-      <li>Input, output, context, and cached-token metrics</li>
-      <li>DeepSeek balance history</li>
-      <li>Native tray and tray-anchored metrics panel</li>
+      <li>Monitor token counts from Ollama conversations in real-time</li>
+      <li>Watch input, output, and cached token breakdowns</li>
+      <li>See your 30-day usage patterns at a glance</li>
+      <li>Monthly calendar heat-map to track your usage for every month</li>
+      <li>Drill into 24-hour token charts with advanced filtering</li>
+      <li>Track actual Input/Output tokens and Cache Hit Rate</li>
+      <li>DeepSeek account balance tracking with interactive trend charts</li>
+    </ul>
+    <p><strong>Private &amp; Local</strong></p>
+    <ul>
+      <li>Everything runs on your machine - no data leaves your desktop</li>
+      <li>API keys stored securely in your OS keychain</li>
+      <li
+            >Full offline functionality (DeepSeek balance tracking requires internet)</li>
+    </ul>
+    <p><strong>Native Desktop Experience</strong></p>
+    <ul>
+      <li>Tray-anchored metrics panel always at hand</li>
+      <li>Dashboard with totals, today's streak, and model breakdown</li>
+      <li>Cross-platform: Linux, Windows, and macOS support</li>
     </ul>
   </description>
   <categories>
     <category>Development</category>
     <category>Utility</category>
   </categories>
-  <content_rating type="oars-1.1"/>
+  <content_rating type="oars-1.1" />
   <provides>
     <binary>tokenflow</binary>
   </provides>
   <releases>
-    <release version="0.1.0+alpha.1" date="2026-11-06"/>
-    <release version="0.1.0" date="2026-11-03"/>
+    <release version="0.1.0+alpha.2" date="2026-11-08" />
+    <release version="0.1.0+alpha.1" date="2026-11-06" />
   </releases>
 </component>

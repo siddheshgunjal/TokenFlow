@@ -33,21 +33,34 @@ pub struct SnapshotService {
     current: Arc<RwLock<Option<Arc<DashboardSummary>>>>,
     revision: Arc<AtomicU64>,
     dirty: Arc<Notify>,
+    /// Monotonic count of `mark_dirty` calls. A rebuild records the value it
+    /// observed before reading the database, so it satisfies every signal
+    /// that preceded its read.
+    dirty_seq: Arc<AtomicU64>,
+    /// The newest `dirty_seq` value reflected by a completed rebuild.
+    built_seq: Arc<AtomicU64>,
     build_lock: Arc<Mutex<()>>,
     events: broadcast::Sender<Arc<DashboardSummary>>,
 }
+
+/// Snapshot events retained for a lagging receiver. The bridge is the only
+/// consumer and keeps up with the sender, so a small ring bounds retained
+/// snapshot memory without dropping events in practice.
+const SNAPSHOT_EVENT_CAPACITY: usize = 16;
 
 impl SnapshotService {
     /// Creates the service with no snapshot built yet. The scheduler's first
     /// `mark_dirty()` (seeded in [`spawn_scheduler`]) produces the initial
     /// rebuild, so `current()` returns `None` until then.
     pub fn new(db: Db, proxy_status: Arc<RwLock<ProxyStatus>>) -> Self {
-        let (current, revision, dirty, build_lock, events) = (
+        let (current, revision, dirty, dirty_seq, built_seq, build_lock, events) = (
             Arc::new(RwLock::new(None)),
             Arc::new(AtomicU64::new(0)),
             Arc::new(Notify::new()),
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
             Arc::new(Mutex::new(())),
-            broadcast::channel(64).0,
+            broadcast::channel(SNAPSHOT_EVENT_CAPACITY).0,
         );
 
         Self {
@@ -56,6 +69,8 @@ impl SnapshotService {
             current,
             revision,
             dirty,
+            dirty_seq,
+            built_seq,
             build_lock,
             events,
         }
@@ -72,7 +87,17 @@ impl SnapshotService {
     /// Signals that the underlying data has changed. Safe to call from any
     /// thread; multiple calls coalesce into a single rebuild.
     pub fn mark_dirty(&self) {
+        self.dirty_seq.fetch_add(1, Ordering::SeqCst);
         self.dirty.notify_one();
+    }
+
+    /// True when a dirty signal arrived after the last completed rebuild.
+    ///
+    /// An explicit rebuild (for example the one behind a manual refresh)
+    /// records the sequence it observed, so the scheduler's trailing rebuild
+    /// becomes a no-op instead of scanning the database a second time.
+    fn needs_rebuild(&self) -> bool {
+        self.dirty_seq.load(Ordering::SeqCst) > self.built_seq.load(Ordering::SeqCst)
     }
 
     /// Subscribes to completed snapshots. Each rebuild sends exactly one
@@ -89,10 +114,17 @@ impl SnapshotService {
         let started = std::time::Instant::now();
         let _guard = self.build_lock.lock().await;
 
+        // Every dirty signal published before this read is satisfied by this
+        // rebuild. A signal that arrives while the query runs bumps the
+        // sequence again and schedules a follow-up rebuild.
+        let observed = self.dirty_seq.load(Ordering::SeqCst);
+
         let db = self.db.clone();
         let raw = tokio::task::spawn_blocking(move || db.snapshot())
             .await
             .map_err(|err| AppError::Config(format!("snapshot task panicked: {err}")))??;
+
+        self.built_seq.fetch_max(observed, Ordering::SeqCst);
 
         let revision = self.revision.fetch_add(1, Ordering::SeqCst) + 1;
         let proxy = self
@@ -169,6 +201,15 @@ pub fn spawn_scheduler(service: SnapshotService) {
                 }
             }
 
+            if !rebuild_service.needs_rebuild() {
+                // A rebuild that ran while this wakeup was debouncing (for
+                // example the explicit one behind a manual refresh) already
+                // covers every pending signal. Rebuilding again would scan
+                // the database and re-emit the same payload for nothing.
+                tracing::debug!("skipping snapshot rebuild; already current");
+                continue;
+            }
+
             if let Err(err) = rebuild_service.rebuild().await {
                 tracing::warn!(%err, "snapshot rebuild failed");
             }
@@ -206,9 +247,12 @@ pub fn spawn_scheduler(service: SnapshotService) {
 /// Bridges the core broadcast channel to Tauri webview events. This is the
 /// only place in the snapshot module that touches Tauri types.
 ///
-/// When every window is hidden (including the Linux case where windows are
-/// kept but their renderers are suspended), the emit is skipped. The UI
-/// re-syncs with `get_core_snapshot` when a window is revealed.
+/// The emit is skipped when every window is hidden (including the Linux case
+/// where windows are kept but their renderers are suspended), and skipped for
+/// an individual window that is minimized: a minimized window cannot paint,
+/// and the hook re-syncs with `get_core_snapshot` when the window regains
+/// focus. Hiding and minimizing are therefore both free of snapshot parsing
+/// and buffering work in the renderer.
 pub fn spawn_bridge(
     app: tauri::AppHandle,
     mut rx: broadcast::Receiver<Arc<DashboardSummary>>,
@@ -218,14 +262,24 @@ pub fn spawn_bridge(
         loop {
             match rx.recv().await {
                 Ok(snapshot) => {
-                    if app.webview_windows().is_empty()
-                        || visible_windows.load(Ordering::SeqCst) == 0
-                    {
+                    if visible_windows.load(Ordering::SeqCst) == 0 {
                         continue;
                     }
 
-                    if let Err(err) = app.emit("core-snapshot", snapshot.as_ref()) {
-                        tracing::warn!(%err, "could not emit core-snapshot event");
+                    for window in app.webview_windows().into_values() {
+                        if !window.is_visible().unwrap_or(false)
+                            || window.is_minimized().unwrap_or(false)
+                        {
+                            continue;
+                        }
+
+                        if let Err(err) = window.emit("core-snapshot", snapshot.as_ref()) {
+                            tracing::warn!(
+                                %err,
+                                label = window.label(),
+                                "could not emit core-snapshot event"
+                            );
+                        }
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
@@ -329,6 +383,30 @@ mod tests {
         assert!(
             b.revision > a.revision,
             "revisions must be strictly increasing"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_completed_rebuild_satisfies_pending_dirty_signals() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (service, _db) = service_for(&dir.path().join("tokenflow.db"));
+
+        service.mark_dirty();
+        assert!(
+            service.needs_rebuild(),
+            "a dirty signal must request a rebuild"
+        );
+
+        service.rebuild().await.expect("rebuild");
+        assert!(
+            !service.needs_rebuild(),
+            "a rebuild that observed the signal satisfies it"
+        );
+
+        service.mark_dirty();
+        assert!(
+            service.needs_rebuild(),
+            "a signal after the rebuild must request another one"
         );
     }
 }

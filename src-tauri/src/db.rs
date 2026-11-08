@@ -22,6 +22,11 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_cached_prompt_tokens.sql"),
 ];
 
+/// Balance samples older than this are pruned by [`Db::run_maintenance`].
+/// The balance chart only ever shows day/week/month windows, so 90 days is
+/// far more history than any view consumes.
+pub const BALANCE_RETENTION_SECS: i64 = 90 * 24 * 60 * 60;
+
 /// A small SQLite wrapper.
 ///
 /// A single WAL-mode connection is shared behind a mutex. Writes are serialized,
@@ -49,6 +54,12 @@ impl Db {
         conn.pragma_update(None, "secure_delete", true)?;
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // Bound the connection's page cache (default is ~2 MiB) and cap how
+        // large the WAL file may remain after a checkpoint. The connection is
+        // owned by the core for the whole session, so an explicit cap keeps a
+        // long-lived desktop process honest.
+        conn.pragma_update(None, "cache_size", -1000)?;
+        conn.pragma_update(None, "journal_size_limit", 8 * 1024 * 1024)?;
         run_migrations(&conn)?;
 
         Ok(Self {
@@ -250,10 +261,37 @@ impl Db {
         let deepseek_balances = tx.execute("DELETE FROM deepseek_balances", [])?;
         tx.execute("DELETE FROM deepseek_sync", [])?;
         tx.commit()?;
+
+        // A bulk delete leaves the WAL holding every removed page; truncate it
+        // immediately instead of waiting for the next maintenance tick.
+        if let Err(err) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+            tracing::debug!(%err, "WAL checkpoint after clearing usage data failed");
+        }
+
         Ok(ClearDataResult {
             ollama_logs,
             deepseek_balances,
         })
+    }
+
+    /// Periodic storage maintenance run by the DeepSeek poll worker.
+    ///
+    /// Deletes balance samples older than [`BALANCE_RETENTION_SECS`] and
+    /// truncates the WAL. Both are best-effort: a busy checkpoint is retried
+    /// on the next poll, and the pruned row count is returned for logging.
+    pub fn run_maintenance(&self, now: i64) -> Result<usize, AppError> {
+        let conn = self.lock();
+        let cutoff = now - BALANCE_RETENTION_SECS;
+        let pruned = conn.execute(
+            "DELETE FROM deepseek_balances WHERE created_at < ?1",
+            params![cutoff],
+        )?;
+
+        if let Err(err) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+            tracing::debug!(%err, "WAL checkpoint skipped");
+        }
+
+        Ok(pruned)
     }
 
     /// Builds a dashboard aggregate for the core-owned fixed range.
@@ -828,8 +866,9 @@ fn day_usage_detail(conn: &Connection, date: NaiveDate) -> rusqlite::Result<DayU
 mod tests {
     use super::{
         balance_history, cache_hit_rate, daily_since, day_usage_detail, local_midnight,
-        models_since, run_migrations, totals_since, Db,
+        models_since, run_migrations, totals_since, Db, BALANCE_RETENTION_SECS,
     };
+    use crate::models::BalanceInfoInput;
     use chrono::{Local, TimeZone};
     use rusqlite::{params, Connection};
 
@@ -929,6 +968,35 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].total_balance, "10.00");
         assert_eq!(rows[1].total_balance, "9.00");
+    }
+
+    #[test]
+    fn maintenance_prunes_balance_samples_past_retention() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+        let now = chrono::Utc::now().timestamp();
+        let old = now - BALANCE_RETENTION_SECS - 60;
+
+        let sample = |balance: &str| {
+            vec![BalanceInfoInput {
+                currency: "CNY".to_string(),
+                total_balance: balance.to_string(),
+                granted_balance: None,
+                topped_up_balance: None,
+            }]
+        };
+
+        db.insert_deepseek_balances(true, &sample("1.00"), old)
+            .expect("old balance");
+        db.insert_deepseek_balances(true, &sample("2.00"), now)
+            .expect("fresh balance");
+
+        let pruned = db.run_maintenance(now).expect("maintenance");
+        assert_eq!(pruned, 1, "only the sample past retention is pruned");
+
+        let latest = db.latest_balances().expect("latest balances");
+        assert_eq!(latest.len(), 1);
+        assert_eq!(latest[0].total_balance, "2.00");
     }
 
     #[test]

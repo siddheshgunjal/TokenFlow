@@ -26,6 +26,8 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 
 </div>
 
+TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It runs a loopback proxy in front of Ollama, records the token counts reported by the stream, and polls the DeepSeek balance API.
+
 ## ✨ Features
 
 📊 **Track Your Usage**

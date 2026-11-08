@@ -1,10 +1,13 @@
+import { memo } from "react";
 import { motion } from "framer-motion";
 
 import { formatCompact, formatNumber, formatPercent } from "../lib/format";
 import { colorForModel, type ModelColor } from "../lib/modelColors";
 import type { ModelUsage } from "../lib/types";
 
-export function ModelBreakdown({
+// Memoized on the `models` and `modelColors` references: the snapshot hook
+// reconciles unchanged slices, so a DeepSeek-only refresh skips this card.
+export const ModelBreakdown = memo(function ModelBreakdown({
   models,
   modelColors,
 }: {
@@ -95,4 +98,4 @@ export function ModelBreakdown({
       )}
     </section>
   );
-}
+});

@@ -143,6 +143,12 @@ impl AppState {
         let deepseek_http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
+            // The poller is sequential, so one warm connection covers it.
+            // Without a cap reqwest keeps idle connections per host without
+            // limit; a desktop process that lives for days should never
+            // accumulate them.
+            .pool_max_idle_per_host(2)
+            .pool_idle_timeout(Duration::from_secs(30))
             .user_agent(concat!("TokenFlow/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|err| AppError::Config(format!("Could not create HTTP client: {err}")))?;
