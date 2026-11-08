@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import {
   formatCompact,
   formatNumber,
@@ -7,7 +9,13 @@ import {
 } from "../lib/format";
 import type { OllamaLog } from "../lib/types";
 
-export function RecentRequests({ logs }: { logs: OllamaLog[] }) {
+// Memoized on the `logs` reference: unchanged usage slices keep their
+// previous identity, so this table only re-renders when a request changes.
+export const RecentRequests = memo(function RecentRequests({
+  logs,
+}: {
+  logs: OllamaLog[];
+}) {
   const visibleLogs = logs.slice(0, 15);
 
   return (
@@ -107,4 +115,4 @@ export function RecentRequests({ logs }: { logs: OllamaLog[] }) {
       )}
     </section>
   );
-}
+});
