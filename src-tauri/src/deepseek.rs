@@ -42,6 +42,8 @@ pub fn spawn_worker(state: AppState) {
                 }
             }
 
+            run_storage_maintenance(&state).await;
+
             let interval = state
                 .settings()
                 .deepseek_poll_interval_secs
@@ -49,6 +51,24 @@ pub fn spawn_worker(state: AppState) {
             tokio::time::sleep(Duration::from_secs(interval)).await;
         }
     });
+}
+
+/// Prunes old balance samples and truncates the WAL once per poll cycle.
+///
+/// Runs even when no API key is configured: the WAL also grows from proxy
+/// usage, and both operations are cheap enough to run on every poll.
+async fn run_storage_maintenance(state: &AppState) {
+    let db = state.db.clone();
+    let now = chrono::Utc::now().timestamp();
+
+    match tokio::task::spawn_blocking(move || db.run_maintenance(now)).await {
+        Ok(Ok(pruned)) if pruned > 0 => {
+            tracing::debug!(pruned, "pruned DeepSeek balance samples past retention");
+        }
+        Ok(Ok(_)) => {}
+        Ok(Err(err)) => tracing::warn!(%err, "storage maintenance failed"),
+        Err(err) => tracing::warn!(%err, "storage maintenance task failed"),
+    }
 }
 
 /// Acquires the refresh coordinator, performs a balance refresh if a key is

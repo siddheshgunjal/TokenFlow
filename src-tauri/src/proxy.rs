@@ -56,6 +56,11 @@ async fn run(state: AppState) -> Result<(), Box<dyn std::error::Error + Send + S
     let client = reqwest::Client::builder()
         .no_proxy()
         .connect_timeout(Duration::from_secs(5))
+        // Ollama traffic to one loopback host needs a couple of warm
+        // connections; cap the idle pool so a long-lived proxy cannot
+        // accumulate sockets across client churn.
+        .pool_max_idle_per_host(2)
+        .pool_idle_timeout(Duration::from_secs(30))
         .user_agent(concat!("TokenFlow/", env!("CARGO_PKG_VERSION")))
         .build()?;
 

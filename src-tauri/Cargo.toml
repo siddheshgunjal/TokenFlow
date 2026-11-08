@@ -15,6 +15,12 @@ bugs = "https://github.com/siddheshgunjal/TokenFlow/issues"
 name = "tokenflow_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Installs a counting global allocator and logs core heap counters every 60s.
+# Off by default: it adds two atomic operations to every allocation.
+heap-stats = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

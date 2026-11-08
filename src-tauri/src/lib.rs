@@ -3,6 +3,11 @@ mod commands;
 mod db;
 mod deepseek;
 mod error;
+#[cfg(feature = "heap-stats")]
+mod heap_stats;
+mod memory;
+#[cfg(test)]
+mod memory_stress;
 mod models;
 mod platform;
 mod proxy;
@@ -15,6 +20,13 @@ mod tray;
 mod windows;
 
 use tauri::{Manager, RunEvent};
+
+/// Optional allocation accounting for long-running memory captures. The
+/// feature is off by default; the allocator is a plain `System` delegate with
+/// counters, so it changes nothing else about the process.
+#[cfg(feature = "heap-stats")]
+#[global_allocator]
+static GLOBAL_ALLOCATOR: heap_stats::CountingAllocator = heap_stats::CountingAllocator;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -62,6 +74,11 @@ pub fn run() {
                 state.snapshots.subscribe(),
                 state.visible_windows.clone(),
             );
+
+            // Keep the UI-process caches bounded while no window is visible.
+            memory::spawn_idle_cache_trim(handle.clone(), state.visible_windows.clone());
+            #[cfg(feature = "heap-stats")]
+            heap_stats::spawn_reporter();
 
             let settings = state.settings();
             if startup::is_autostart_launch() {
