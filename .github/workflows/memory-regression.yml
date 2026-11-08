@@ -1,0 +1,43 @@
+name: Memory regression
+
+# Weekly guard for the core refresh path. The probe in
+# `src-tauri/src/memory_stress.rs` drives 2,000 DeepSeek-refresh-equivalent
+# cycles (HTTP fetch, balance writes, snapshot read, JSON serialization,
+# broadcast ring) and fails when the process retains more than 5 MiB.
+#
+# This is deliberately separate from CI: it is a release-cadence check, not a
+# per-PR one, and it needs the full Linux Tauri build dependencies.
+
+on:
+  schedule:
+    # 04:00 UTC every Monday.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  refresh-cycle-rss:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            librsvg2-dev \
+            libdbus-1-dev
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust workspace
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Refresh-cycle RSS probe
+        # Release build: the budget was calibrated on optimized code.
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml memory_stress -- --ignored --nocapture
