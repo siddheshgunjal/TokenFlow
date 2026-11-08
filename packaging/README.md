@@ -10,7 +10,7 @@ work locally when the matching toolchain is available.
 | Linux | `.rpm` | `x86_64`, `aarch64` | `TokenFlow-<version>-linux-x86_64.rpm` |
 | Linux | AppImage | `x86_64`, `aarch64` | `TokenFlow-<version>-linux-x86_64.AppImage` |
 | Linux | `.flatpak` | `x86_64`, `aarch64` | `TokenFlow-<version>-linux-x86_64.flatpak` |
-| Windows | NSIS `.exe` | `x86_64`, `aarch64` | `TokenFlow-<version>-windows-x86_64-setup.exe` |
+| Windows | `.exe` | `x86_64`, `aarch64` | `TokenFlow-<version>-windows-x86_64-setup.exe` |
 | macOS | `.dmg` | `x86_64`, `aarch64` | `TokenFlow-<version>-macos-x86_64.dmg` |
 
 Every release also publishes `SHA256SUMS`. DEB and RPM keep their native
@@ -108,8 +108,8 @@ them to `release/` with the normalized names above.
 | --- | --- | --- |
 | `npm run bundle:linux:x64` | Linux x86_64 | `.deb`, `.rpm`, AppImage for `x86_64-unknown-linux-gnu` |
 | `npm run bundle:linux:arm64` | Linux aarch64 | `.deb`, `.rpm`, AppImage for `aarch64-unknown-linux-gnu` |
-| `npm run bundle:windows:x64` | Windows x86_64 | NSIS `.exe` for `x86_64-pc-windows-msvc` |
-| `npm run bundle:windows:arm64` | Windows ARM64 | NSIS `.exe` for `aarch64-pc-windows-msvc` |
+| `npm run bundle:windows:x64` | Windows x86_64 | `.exe` for `x86_64-pc-windows-msvc` |
+| `npm run bundle:windows:arm64` | Windows ARM64 | `.exe` for `aarch64-pc-windows-msvc` |
 | `npm run bundle:macos:x64` | macOS | `.dmg` for `x86_64-apple-darwin` |
 | `npm run bundle:macos:arm64` | macOS | `.dmg` for `aarch64-apple-darwin` |
 | `npm run bundle:flatpak` | Linux | Host-architecture `.flatpak` |
@@ -230,7 +230,7 @@ release notes.
 | Topic | Current behavior | Follow-up |
 | --- | --- | --- |
 | macOS signing | Ad-hoc signature (`APPLE_SIGNING_IDENTITY=-`), no notarization | Add Developer ID signing and notarization when certificates exist |
-| Windows signing | Unsigned NSIS installer | Add an OV/EV certificate; SmartScreen reputation builds over time |
+| Windows signing | Unsigned installer | Add an OV/EV certificate; SmartScreen reputation builds over time |
 | RPM signing | Unsigned package | Sign releases with a repository GPG key if an RPM repository is added |
 | AppImage | Built in CI; not locally validated on Fedora | Validate on Ubuntu 22.04 and Fedora before advertising |
 | DEB | Built in CI; not locally validated on Fedora | Validate on Debian 12 and Ubuntu 22.04 |

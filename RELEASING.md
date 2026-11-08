@@ -72,7 +72,7 @@ sha256sum -c SHA256SUMS
   | --- | --- | --- |
   | `preflight` | `ubuntu-24.04` | Validates `VERSION` and the tag; adds the release-body note |
   | `linux` matrix | `ubuntu-22.04`, `ubuntu-22.04-arm` | `.deb`, `.rpm`, AppImage |
-  | `windows` matrix | `windows-2025`, `windows-11-arm` | NSIS `.exe` |
+  | `windows` matrix | `windows-2025`, `windows-11-arm` | `.exe` |
   | `macos` matrix | `macos-15-intel`, `macos-15` | `.dmg`, ad-hoc signed |
   | `flatpak` matrix | `ubuntu-24.04`, `ubuntu-24.04-arm` | `.flatpak` |
   | `flathub-manifest` | `ubuntu-24.04` | Future Flathub manifest as a workflow artifact |
@@ -84,18 +84,18 @@ sha256sum -c SHA256SUMS
 ## Local bundle builds
 
 - Link to `packaging/README.md` for the full matrix and commands.
-- Do not duplicate the per-format install instructions; reference `packaging/README.md` for details on `.deb`, `.rpm`, AppImage, NSIS `.exe`, `.dmg`, and Flatpak builds.
+- Do not duplicate the per-format install instructions; reference `packaging/README.md` for details on `.deb`, `.rpm`, AppImage, `.exe`, `.dmg`, and Flatpak builds.
 
 ## Verification
 
 - `sha256sum -c SHA256SUMS` — verify checksums of all downloaded installers.
 - Install each format on its target platform before announcing the release.
-- For locally built bundles, verify the Tauri signature: `codesign --verify --deep --strict --verbose=2 /Applications/TokenFlow.app` (macOS) or check the NSIS installer signature (Windows).
+- For locally built bundles, verify the Tauri signature: `codesign --verify --deep --strict --verbose=2 /Applications/TokenFlow.app` (macOS) or check the installer signature (Windows).
 
 ## Platform caveats
 
 - **macOS signing**: Ad-hoc signature (`APPLE_SIGNING_IDENTITY=-`), no notarization. On first launch, Gatekeeper may block; right-click → Open → Open again, or System Settings → Privacy & Security → Open Anyway. Each fresh download can be quarantined again.
-- **Windows signing**: Unsigned NSIS installer. SmartScreen may show a warning on first run: "More info" → "Run anyway". Installer uses the WebView2 download bootstrapper, which may require network access when WebView2 is missing.
+- **Windows signing**: Unsigned installer. SmartScreen may show a warning on first run: "More info" → "Run anyway". Installer uses the WebView2 download bootstrapper, which may require network access when WebView2 is missing.
 - **RPM signing**: Unsigned package. Sign releases with a repository GPG key if an RPM repository is added.
 - **AppImage**: Built in CI; not locally validated on Fedora. Validate on Ubuntu 22.04 and Fedora before advertising.
 - **DEB**: Built in CI; not locally validated on Fedora. Validate on Debian 12 and Ubuntu 22.04.

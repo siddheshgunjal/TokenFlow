@@ -86,7 +86,7 @@ Short tree: `src/`, `src-tauri/`, `flatpak/`, `packaging/`, `scripts/`, `website
 - `npm run version:sync` — Propagate VERSION file to package.json, package-lock.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock, and tauri.conf.json
 - `npm run version:check` — Fail if any derived value is stale; with `--tag vX.Y.Z`, verify release tag matches VERSION
 - `npm run bundle:linux:x64` / `arm64` — Produce .deb, .rpm, AppImage for x86_64 or aarch64
-- `npm run bundle:windows:x64` / `arm64` — Produce NSIS .exe for x86_64 or aarch64
+- `npm run bundle:windows:x64` / `arm64` — Produce .exe for x86_64 or aarch64
 - `npm run bundle:macos:x64` / `arm64` — Produce .dmg for x86_64 or aarch64
 - `npm run bundle:flatpak` — Produce .flatpak
 - `npm run icons` — Generate icons with `python3 scripts/generate_icons.py`
