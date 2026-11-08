@@ -58,7 +58,7 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 | Linux | `.deb` | `x86_64`, `aarch64` |
 | Linux | `.rpm` | `x86_64`, `aarch64` |
 | Linux | AppImage | `x86_64`, `aarch64` |
-| Windows | NSIS `.exe` | `x86_64`, `aarch64` |
+| Windows | `.exe` | `x86_64`, `aarch64` |
 | macOS | `.dmg` | `x86_64`, `aarch64` |
 
 ## 🚀 Getting Started

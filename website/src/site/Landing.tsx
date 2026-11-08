@@ -629,15 +629,16 @@ function DownloadSection() {
   }> = [
     {
       name: "Linux",
-      description: "AppImage, .deb, .rpm, or .flatpak for x64 and arm64.",
+      description: ".flatpak, .rpm, .deb or AppImage for x64 and arm64.",
     },
     {
       name: "macOS",
-      description: "A .dmg for Apple Silicon and Intel Macs.",
+      description:
+        "A .dmg for Apple Silicon and Intel Macs. Not notarized yet.",
     },
     {
       name: "Windows",
-      description: "An NSIS .exe installer for x64 and arm64.",
+      description: "An .exe installer for x64 and arm64. Not signed yet.",
     },
   ];
 
