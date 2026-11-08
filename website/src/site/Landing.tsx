@@ -20,7 +20,7 @@ const CONTRIBUTING_URL =
   "https://github.com/siddheshgunjal/TokenFlow/blob/main/CONTRIBUTING.md";
 const PORTFOLIO_URL = "https://siddheshgunjal.github.io/";
 
-type OS = "MacOS" | "Windows" | "Linux" | "Desktop";
+type OS = "macOS" | "Windows" | "Linux" | "Desktop";
 type DownloadPlatform = Exclude<OS, "Desktop">;
 
 const FEATURES: Array<{
@@ -71,7 +71,7 @@ function detectOS(): OS {
   const ua = navigator.userAgent;
 
   if (/Windows/i.test(ua)) return "Windows";
-  if (/Macintosh|Mac OS X/i.test(ua)) return "MacOS";
+  if (/Macintosh|Mac OS X/i.test(ua)) return "macOS";
   if (/CrOS/i.test(ua)) return "Desktop";
   if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) return "Linux";
   return "Desktop";
@@ -632,7 +632,7 @@ function DownloadSection() {
       description: "AppImage, .deb, .rpm, or .flatpak for x64 and arm64.",
     },
     {
-      name: "MacOS",
+      name: "macOS",
       description: "A .dmg for Apple Silicon and Intel Macs.",
     },
     {
