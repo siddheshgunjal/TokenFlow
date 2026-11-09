@@ -1,0 +1,87 @@
+name: Deploy website
+
+# Deploys the standalone site in website/ to GitHub Pages.
+# Repository settings -> Pages -> Source must be "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v4
+        with:
+          # A release event checks out the tag by default. Always deploy the
+          # latest website code from the default branch instead.
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Resolve website base path
+        shell: bash
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          base="$BASE_PATH"
+          if [ -z "$base" ] || [ "$base" = "/" ]; then
+            base="/"
+          else
+            base="${base%/}/"
+          fi
+          printf 'WEBSITE_BASE=%s\n' "$base" >> "$GITHUB_ENV"
+
+      - name: Build website
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
