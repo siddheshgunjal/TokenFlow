@@ -62,7 +62,7 @@ const FEATURES: Array<{
     icon: "shield",
     title: "Private and lightweight",
     description:
-      "Loopback-only proxy, local processing, OS keychain, no telemetry. ~25 MB installed.",
+      "Loopback-only proxy, local processing, no telemetry. ~80 MB in the background.",
   },
 ];
 
@@ -85,7 +85,7 @@ export function Landing() {
         <Hero />
         <DemoSection />
         <FeatureSection />
-        <FootprintSection />
+        <MemorySection />
         <HowItWorks />
         <DownloadSection />
       </main>
@@ -118,8 +118,8 @@ function SiteHeader() {
           <a href="#features" className="transition-colors hover:text-ink">
             Features
           </a>
-          <a href="#footprint" className="transition-colors hover:text-ink">
-            Footprint
+          <a href="#memory" className="transition-colors hover:text-ink">
+            Memory
           </a>
           <a href="#how-it-works" className="transition-colors hover:text-ink">
             How it works
@@ -202,7 +202,7 @@ function Hero() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="terminal" className="h-3.5 w-3.5 text-accent" />
-            Built with Rust
+            Rust · ~80 MB
           </span>
         </div>
 
@@ -429,62 +429,63 @@ function FeatureSection() {
   );
 }
 
-function FootprintSection() {
+function MemorySection() {
   return (
     <section
-      id="footprint"
+      id="memory"
       className="scroll-mt-20 border-t border-white/[0.06] py-12 sm:py-16"
     >
       <div className="mx-auto max-w-5xl px-5 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-base font-semibold uppercase tracking-[0.18em] text-accent">
-            Footprint
+            Memory
           </p>
           <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
             Unlike Electron
-            <span className="block">TokenFlow stays small.</span>
+            <span className="block">TokenFlow stays put.</span>
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
-            TokenFlow uses the webview your OS already ships. It installs in
-            about 25 MB. A typical Electron app carries its own Chromium and
-            Node.js runtime — around 300 MB before the app itself.
+            Browser and Electron-based tools can open around 300 MB and climb
+            toward 800 as you keep working. TokenFlow is built with Rust and
+            stays near 80 MB in the background.
           </p>
         </div>
 
         <div className="mt-10 space-y-8 sm:space-y-10">
-          <FootprintRow
+          <MemoryRow
             name="TokenFlow"
-            subtitle="Installed, every platform"
+            subtitle="Typical background use"
             dots={
               <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
-                <Dots count={5} tone="accent" />
+                <Dots count={8} tone="accent" />
               </div>
             }
-            value="~25"
+            value="~80"
           />
-          <FootprintRow
+          <MemoryRow
             name="Typical Electron app"
-            subtitle="Bundled browser runtime"
+            subtitle="Grows with use"
             dots={
               <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
-                <Dots count={60} tone="solid" />
+                <Dots count={30} tone="solid" />
+                <Dots count={50} tone="faded" />
               </div>
             }
-            value="~300"
+            value="300–800"
           />
         </div>
 
         <p className="mt-8 text-center text-[13px] leading-6 text-muted/70">
-          One dot is 5 MB. A typical Electron app ships its own Chromium and
-          Node.js runtime, which is why it lands around 300 MB installed.
-          TokenFlow uses the webview already included with your OS.
+          One dot is 10 MB. TokenFlow stays around 80 MB in the background. The
+          fainter dots are the memory a typical Electron app picks up over a
+          long run.
         </p>
       </div>
     </section>
   );
 }
 
-function FootprintRow({
+function MemoryRow({
   name,
   subtitle,
   dots,
@@ -656,8 +657,8 @@ function DownloadSection() {
             Download TokenFlow
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
-            Free and open source. Built with Rust, with a ~25 MB installed
-            footprint.
+            Free and open source. Built with Rust, the desktop app uses about 80
+            MB in the background.
           </p>
         </div>
 

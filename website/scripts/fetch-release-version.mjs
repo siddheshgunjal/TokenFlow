@@ -11,6 +11,33 @@ const packageJson = JSON.parse(
 );
 const repository = "siddheshgunjal/TokenFlow";
 const apiUrl = `https://api.github.com/repos/${repository}/releases?per_page=100`;
+const releasesFeedUrl = `https://github.com/${repository}/releases.atom`;
+
+function readToken() {
+  const fromEnv =
+    process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+
+  try {
+    return execFileSync("gh", ["auth", "token"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+const token = readToken();
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
 
 function normalize(tag) {
   const value = String(tag ?? "").trim();
@@ -29,37 +56,83 @@ function existingFallback() {
   return normalize(packageJson.version) ?? "v0.0.0";
 }
 
+function runCurl(
+  url,
+  { accept = "application/vnd.github+json", auth = true } = {},
+) {
+  let output;
+  try {
+    output = execFileSync(
+      "curl",
+      [
+        "-sS",
+        "-L",
+        "--max-time",
+        "15",
+        "-H",
+        `Accept: ${accept}`,
+        "-H",
+        "User-Agent: tokenflow-website",
+        ...(auth && token ? ["-H", `Authorization: Bearer ${token}`] : []),
+        "-w",
+        "\n%{http_code}",
+        url,
+      ],
+      { encoding: "utf8" },
+    );
+  } catch (error) {
+    // Do not surface error.message: it contains the full command line,
+    // including the Authorization header when a token is configured.
+    const detail = [error.stderr, error.stdout]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    throw new Error(detail || "curl request failed");
+  }
+
+  const splitAt = output.lastIndexOf("\n");
+  if (splitAt === -1) return output;
+
+  const body = output.slice(0, splitAt);
+  const status = Number(output.slice(splitAt + 1).trim());
+  if (status < 200 || status >= 300) {
+    let message = `GitHub returned ${status}`;
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed.message === "string" && parsed.message.trim()) {
+        message += `: ${parsed.message.trim()}`;
+      }
+    } catch {
+      // Non-JSON error body; the status is enough.
+    }
+    throw new HttpError(status, message);
+  }
+  return body;
+}
+
 async function fetchReleases() {
   // curl honors the environment's HTTP(S) proxy settings, which Node's fetch
   // does not. Fall back to fetch for environments without curl.
   try {
-    const output = execFileSync(
-      "curl",
-      [
-        "-sS",
-        "--fail",
-        "--max-time",
-        "10",
-        "-H",
-        "Accept: application/vnd.github+json",
-        "-H",
-        "User-Agent: tokenflow-website",
-        apiUrl,
-      ],
-      { encoding: "utf8" },
-    );
-    return JSON.parse(output);
+    return JSON.parse(runCurl(apiUrl));
   } catch (curlError) {
+    if (curlError.status) {
+      throw curlError;
+    }
     try {
       const response = await fetch(apiUrl, {
         headers: {
           Accept: "application/vnd.github+json",
           "User-Agent": "tokenflow-website",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         signal: AbortSignal.timeout(8000),
       });
       if (!response.ok) {
-        throw new Error(`GitHub API returned ${response.status}`);
+        const body = await response.text().catch(() => "");
+        throw new Error(
+          `GitHub API returned ${response.status}${body ? `: ${body}` : ""}`,
+        );
       }
       return await response.json();
     } catch (fetchError) {
@@ -68,6 +141,28 @@ async function fetchReleases() {
       );
     }
   }
+}
+
+async function fetchLatestFromFeed() {
+  // The public releases Atom feed is not subject to the REST API's
+  // unauthenticated limit. It does not expose the stable/prerelease flag, so
+  // use it only as a best-effort fallback when the API is unavailable.
+  const feed = runCurl(releasesFeedUrl, {
+    accept: "application/atom+xml",
+    auth: false,
+  });
+  const entry = feed.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];
+  if (!entry) {
+    throw new Error("releases feed did not contain an entry");
+  }
+
+  const href = entry.match(/\/releases\/tag\/([^"]+)"/)?.[1];
+  const title = entry.match(/<title>([^<]+)<\/title>/)?.[1];
+  const value = href ? decodeURIComponent(href) : title;
+  if (!value) {
+    throw new Error("releases feed entry did not contain a tag");
+  }
+  return normalize(value.trim());
 }
 
 async function main() {
@@ -86,6 +181,20 @@ async function main() {
     }
   } catch (error) {
     console.warn(`release version sync skipped: ${error.message}`);
+    if (/rate limit/i.test(error.message)) {
+      console.warn(
+        "hint: set GITHUB_TOKEN or GH_TOKEN (or authenticate gh) to raise the GitHub API rate limit",
+      );
+    }
+  }
+
+  if (!version) {
+    try {
+      version = await fetchLatestFromFeed();
+      source = "latest release from Atom feed";
+    } catch (error) {
+      console.warn(`release feed fallback skipped: ${error.message}`);
+    }
   }
 
   if (!version) {
