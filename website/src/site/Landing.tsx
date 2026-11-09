@@ -62,7 +62,7 @@ const FEATURES: Array<{
     icon: "shield",
     title: "Private and lightweight",
     description:
-      "Loopback-only proxy, local processing, no telemetry. ~50 MB in the background.",
+      "Loopback-only proxy, local processing, no telemetry. ~80 MB in the background.",
   },
 ];
 
@@ -202,7 +202,7 @@ function Hero() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="terminal" className="h-3.5 w-3.5 text-accent" />
-            Rust · ~50 MB
+            Rust · ~80 MB
           </span>
         </div>
 
@@ -447,7 +447,7 @@ function MemorySection() {
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
             Browser and Electron-based tools can open around 300 MB and climb
             toward 800 as you keep working. TokenFlow is built with Rust and
-            stays near 50 MB in the background.
+            stays near 80 MB in the background.
           </p>
         </div>
 
@@ -457,10 +457,10 @@ function MemorySection() {
             subtitle="Typical background use"
             dots={
               <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
-                <Dots count={5} tone="accent" />
+                <Dots count={8} tone="accent" />
               </div>
             }
-            value="~50"
+            value="~80"
           />
           <MemoryRow
             name="Typical Electron app"
@@ -476,7 +476,7 @@ function MemorySection() {
         </div>
 
         <p className="mt-8 text-center text-[13px] leading-6 text-muted/70">
-          One dot is 10 MB. TokenFlow stays around 50 MB in the background. The
+          One dot is 10 MB. TokenFlow stays around 80 MB in the background. The
           fainter dots are the memory a typical Electron app picks up over a
           long run.
         </p>
@@ -657,7 +657,7 @@ function DownloadSection() {
             Download TokenFlow
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
-            Free and open source. Built with Rust, the desktop app uses about 50
+            Free and open source. Built with Rust, the desktop app uses about 80
             MB in the background.
           </p>
         </div>
