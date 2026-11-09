@@ -466,13 +466,9 @@ function MemorySection() {
             name="Typical Electron app"
             subtitle="Grows with use"
             dots={
-              <div className="flex w-full flex-col gap-1.5">
-                <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
-                  <Dots count={30} tone="solid" />
-                </div>
-                <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
-                  <Dots count={50} tone="faded" />
-                </div>
+              <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
+                <Dots count={30} tone="solid" />
+                <Dots count={50} tone="faded" />
               </div>
             }
             value="300–800"
