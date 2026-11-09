@@ -29,13 +29,19 @@ export function DayDetailPanel({
   models,
   modelColors,
   refreshKey,
+  modelMutationKey,
 }: {
   date: string;
   models: ModelUsage[];
   modelColors: Map<string, ModelColor>;
   refreshKey: number;
+  modelMutationKey: number;
 }) {
-  const { detail, loading, error, retry } = useDayUsageDetail(date, refreshKey);
+  const { detail, loading, error, retry } = useDayUsageDetail(
+    date,
+    refreshKey,
+    modelMutationKey,
+  );
   const [filter, setFilter] = useState<ModelFilter>({ kind: "all" });
 
   const isToday = date === todayKey();
