@@ -7,7 +7,7 @@ use crate::{
     error::AppError,
     models::{
         BalanceSnapshot, ClearDataResult, DashboardSummary, DayUsageDetail, DeepSeekStatus,
-        ProxyStatus, RefreshResult,
+        ModelCatalogEntry, ModelMutationResult, ProxyStatus, RefreshResult,
     },
     secrets::{self, KeyringStore, SecretStore},
     settings::{Settings, SettingsView},
@@ -262,6 +262,73 @@ pub async fn clear_usage_data(state: State<'_, AppState>) -> Result<ClearDataRes
 
     // The usage tables are now empty; the snapshot must be rebuilt.
     snapshots.mark_dirty();
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_model_catalog(
+    state: State<'_, AppState>,
+) -> Result<Vec<ModelCatalogEntry>, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.model_catalog())
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_model_data(
+    state: State<'_, AppState>,
+    models: Vec<String>,
+) -> Result<ModelMutationResult, String> {
+    let state = state.inner().clone();
+    let snapshots = state.snapshots.clone();
+
+    let result = tokio::task::spawn_blocking(move || state.db.delete_model_data(&models))
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())?;
+
+    snapshots.mark_dirty();
+    if let Err(err) = snapshots.rebuild().await {
+        tracing::warn!(%err, "snapshot rebuild after deleting model data failed");
+    }
+
+    tracing::info!(
+        rows_affected = result.rows_affected,
+        models = result.models.len(),
+        "deleted model usage"
+    );
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn merge_models(
+    state: State<'_, AppState>,
+    sources: Vec<String>,
+    target_model: String,
+) -> Result<ModelMutationResult, String> {
+    let state = state.inner().clone();
+    let snapshots = state.snapshots.clone();
+
+    let result =
+        tokio::task::spawn_blocking(move || state.db.merge_models(&sources, &target_model))
+            .await
+            .map_err(|err| err.to_string())?
+            .map_err(|err| err.to_string())?;
+
+    snapshots.mark_dirty();
+    if let Err(err) = snapshots.rebuild().await {
+        tracing::warn!(%err, "snapshot rebuild after merging models failed");
+    }
+
+    tracing::info!(
+        rows_affected = result.rows_affected,
+        sources = result.models.len(),
+        "merged model usage"
+    );
 
     Ok(result)
 }

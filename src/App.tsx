@@ -17,7 +17,7 @@ const SettingsPage = lazy(() =>
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const { snapshot, error, refreshing, refresh } = useCoreSnapshot();
+  const { snapshot, error, refreshing, refresh, sync } = useCoreSnapshot();
 
   const handleNavigate = useCallback((next: Page) => {
     setPage(next);
@@ -28,6 +28,10 @@ export default function App() {
   const openSettings = useCallback(() => {
     handleNavigate("settings");
   }, [handleNavigate]);
+
+  const handleModelsChanged = useCallback(() => {
+    void sync();
+  }, [sync]);
 
   async function handleOpenWidget() {
     try {
@@ -135,6 +139,7 @@ export default function App() {
                     onRefresh={refresh}
                     error={error}
                     refreshing={refreshing}
+                    onModelsChanged={handleModelsChanged}
                   />
                 ) : (
                   <DashboardSkeleton />

@@ -10,11 +10,13 @@ import type { DayUsageDetail } from "./types";
  * immediate. A `refreshKey` change for the same date (the core `revision`)
  * refetches silently and replaces the data without blanking, so today's panel
  * updates as new Ollama requests arrive. Stale requests are cancelled so a
- * rapid day click never renders a previous date.
+ * rapid day click never renders a previous date. An `invalidationKey` change
+ * (e.g. after model cleanup) also triggers a refetch.
  */
 export function useDayUsageDetail(
   date: string,
   refreshKey: number,
+  invalidationKey: number,
 ): {
   detail: DayUsageDetail | null;
   loading: boolean;
@@ -62,7 +64,8 @@ export function useDayUsageDetail(
       cancelled = true;
     };
     // `refreshKey` is the core revision; `attempt` is the manual retry count.
-  }, [date, refreshKey, attempt]);
+    // `invalidationKey` is for explicit triggers like model mutations.
+  }, [date, refreshKey, invalidationKey, attempt]);
 
   return { detail, loading, error, retry };
 }

@@ -15,6 +15,7 @@ const componentNames = [
   "HourlyUsageChart",
   "Icons",
   "Logo",
+  "ManageModelsDialog",
   "ModelBreakdown",
   "RecentRequests",
   "SelectDropdown",

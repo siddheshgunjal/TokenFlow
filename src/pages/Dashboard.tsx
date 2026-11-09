@@ -36,6 +36,7 @@ export function Dashboard({
   onRefresh,
   error,
   refreshing = false,
+  onModelsChanged,
 }: {
   data: DashboardSummary;
   onOpenSettings: () => void;
@@ -44,8 +45,10 @@ export function Dashboard({
   error: string | null;
   /** Shared refresh-in-progress flag. */
   refreshing?: boolean;
+  onModelsChanged: () => void;
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
+  const [modelMutationKey, setModelMutationKey] = useState(0);
   // The selected day defaults to today and is always present: the day-detail
   // panel has no nullable state.
   const [selectedDate, setSelectedDate] = useState<string>(() => todayKey());
@@ -53,6 +56,11 @@ export function Dashboard({
   const proxyUrl = data.proxy.bindAddress
     ? `http://${data.proxy.bindAddress}`
     : "http://127.0.0.1:11435";
+
+  const handleModelsChanged = useCallback(() => {
+    setModelMutationKey((v) => v + 1);
+    onModelsChanged();
+  }, [onModelsChanged]);
 
   // One color map per snapshot drives both the Models card and the day-detail
   // chart so a model's color is identical in both.
@@ -178,6 +186,7 @@ export function Dashboard({
               models={data.models}
               modelColors={modelColors}
               detailRefreshKey={data.totals.todayRequests}
+              modelMutationKey={modelMutationKey}
             />
           </Suspense>
         </div>
@@ -195,7 +204,11 @@ export function Dashboard({
 
       <div className="grid auto-rows-[24rem] gap-4 lg:grid-cols-5">
         <div className="min-h-0 min-w-0 lg:col-span-2">
-          <ModelBreakdown models={data.models} modelColors={modelColors} />
+          <ModelBreakdown
+            models={data.models}
+            modelColors={modelColors}
+            onModelsChanged={handleModelsChanged}
+          />
         </div>
         <div className="min-h-0 min-w-0 lg:col-span-3">
           <RecentRequests logs={data.recent} />

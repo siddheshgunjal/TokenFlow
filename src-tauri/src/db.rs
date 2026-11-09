@@ -12,8 +12,9 @@ use crate::{
     error::AppError,
     models::{
         BalanceInfoInput, BalanceSnapshot, ClearDataResult, DailyUsage, DashboardSummary,
-        DayUsageDetail, DeepSeekSyncStatus, HourlyUsage, ModelHourlyUsage, ModelUsage, OllamaLog,
-        OllamaLogInsert, ProxyStatus, Totals,
+        DayUsageDetail, DeepSeekSyncStatus, HourlyUsage, ModelCatalogEntry, ModelHourlyUsage,
+        ModelMutationResult, ModelUsage, OllamaLog, OllamaLogInsert, ProxyStatus, Totals,
+        SNAPSHOT_RANGE_DAYS,
     },
 };
 
@@ -371,6 +372,130 @@ impl Db {
         let conn = self.lock();
         Ok(day_usage_detail(&conn, date)?)
     }
+
+    pub fn model_catalog(&self) -> Result<Vec<ModelCatalogEntry>, AppError> {
+        let conn = self.lock();
+        let today = Local::now().date_naive();
+        let recent_start =
+            local_midnight(today - chrono::Duration::days(i64::from(SNAPSHOT_RANGE_DAYS) - 1));
+
+        let mut stmt = conn.prepare(
+            "WITH per_row AS (
+                SELECT model,
+                       created_at,
+                       CASE
+                           WHEN prompt_tokens > cached_prompt_tokens
+                           THEN prompt_tokens - cached_prompt_tokens
+                           ELSE 0
+                       END AS new_input_tokens,
+                       completion_tokens
+                FROM ollama_logs
+             )
+             SELECT model,
+                    COUNT(*) AS requests_total,
+                    COALESCE(SUM(new_input_tokens + completion_tokens), 0) AS tokens_total,
+                    COALESCE(SUM(CASE WHEN created_at >= ?1 THEN 1 ELSE 0 END), 0) AS requests_recent,
+                    COALESCE(SUM(CASE
+                        WHEN created_at >= ?1
+                        THEN new_input_tokens + completion_tokens
+                        ELSE 0
+                    END), 0) AS tokens_recent,
+                    MIN(created_at) AS first_seen_at,
+                    MAX(created_at) AS last_seen_at
+             FROM per_row
+             GROUP BY model
+             ORDER BY tokens_total DESC, model ASC",
+        )?;
+
+        let rows = stmt.query_map(params![recent_start], |row| {
+            Ok(ModelCatalogEntry {
+                model: row.get(0)?,
+                requests_total: row.get(1)?,
+                tokens_total: row.get(2)?,
+                requests_recent: row.get(3)?,
+                tokens_recent: row.get(4)?,
+                first_seen_at: row.get(5)?,
+                last_seen_at: row.get(6)?,
+            })
+        })?;
+
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete_model_data(&self, models: &[String]) -> Result<ModelMutationResult, AppError> {
+        let models = normalize_model_names(models, "Select at least one model to delete.")?;
+
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let mut rows_affected = 0usize;
+
+        for model in &models {
+            rows_affected +=
+                tx.execute("DELETE FROM ollama_logs WHERE model = ?1", params![model])?;
+        }
+
+        tx.commit()?;
+        if rows_affected > 0 {
+            checkpoint_after_model_mutation(&conn);
+        }
+
+        Ok(ModelMutationResult {
+            rows_affected,
+            models,
+            target: None,
+        })
+    }
+
+    pub fn merge_models(
+        &self,
+        sources: &[String],
+        target: &str,
+    ) -> Result<ModelMutationResult, AppError> {
+        let target = target.trim();
+        if target.is_empty() {
+            return Err(AppError::InvalidInput(
+                "A target model name is required.".to_string(),
+            ));
+        }
+
+        let sources = normalize_model_names(sources, "Select at least one model to merge.")?;
+        let sources: Vec<String> = sources
+            .into_iter()
+            .filter(|model| model != target)
+            .collect();
+
+        if sources.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Select at least one model other than the target.".to_string(),
+            ));
+        }
+
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let mut rows_affected = 0usize;
+
+        for source in &sources {
+            rows_affected += tx.execute(
+                "UPDATE ollama_logs SET model = ?1 WHERE model = ?2",
+                params![target, source],
+            )?;
+        }
+
+        tx.commit()?;
+        if rows_affected > 0 {
+            checkpoint_after_model_mutation(&conn);
+        }
+
+        Ok(ModelMutationResult {
+            rows_affected,
+            models: sources,
+            target: Some(target.to_string()),
+        })
+    }
 }
 
 fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -719,6 +844,33 @@ fn local_midnight(date: NaiveDate) -> i64 {
     }
 }
 
+fn normalize_model_names(models: &[String], empty_message: &str) -> Result<Vec<String>, AppError> {
+    let mut out: Vec<String> = Vec::with_capacity(models.len());
+
+    for model in models {
+        if model.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Model names cannot be empty.".to_string(),
+            ));
+        }
+        if !out.iter().any(|existing| existing == model) {
+            out.push(model.clone());
+        }
+    }
+
+    if out.is_empty() {
+        return Err(AppError::InvalidInput(empty_message.to_string()));
+    }
+
+    Ok(out)
+}
+
+fn checkpoint_after_model_mutation(conn: &Connection) {
+    if let Err(err) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+        tracing::debug!(%err, "WAL checkpoint after model mutation failed");
+    }
+}
+
 /// Per-hour accumulator. Built per model and summed into the all-model row,
 /// so the panel totals always equal the calendar day.
 #[derive(Clone, Default)]
@@ -868,9 +1020,31 @@ mod tests {
         balance_history, cache_hit_rate, daily_since, day_usage_detail, local_midnight,
         models_since, run_migrations, totals_since, Db, BALANCE_RETENTION_SECS,
     };
-    use crate::models::BalanceInfoInput;
+    use crate::models::{BalanceInfoInput, OllamaLogInsert};
     use chrono::{Local, TimeZone};
     use rusqlite::{params, Connection};
+
+    fn insert_usage(
+        db: &Db,
+        request_id: &str,
+        model: &str,
+        prompt: i64,
+        completion: i64,
+        cached: i64,
+        created_at: i64,
+    ) {
+        db.insert_ollama_log(&OllamaLogInsert {
+            request_id: request_id.to_string(),
+            model: model.to_string(),
+            endpoint: "/api/chat".to_string(),
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            cached_prompt_tokens: cached,
+            created_at,
+            duration_ms: Some(1),
+        })
+        .expect("insert usage");
+    }
 
     #[test]
     fn cache_rate_is_zero_safe_and_clamped() {
@@ -1138,5 +1312,177 @@ mod tests {
         assert_eq!(all_total, model_total);
         // llama3.2: 1_100 + 600 + 300 = 2_000; qwen2.5: 1_200. Total 3_200.
         assert_eq!(all_total, 2_000 + 1_200);
+    }
+
+    #[test]
+    fn model_catalog_splits_all_time_and_recent_usage() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let now = Local::now().timestamp();
+        let forty_days_ago = now - (40 * 24 * 60 * 60);
+
+        insert_usage(&db, "r1", "llama3.2", 1000, 100, 0, now);
+        insert_usage(&db, "r2", "llama3.2", 2000, 200, 1000, forty_days_ago);
+
+        let catalog = db.model_catalog().expect("catalog");
+        assert_eq!(catalog.len(), 1);
+        let entry = &catalog[0];
+        assert_eq!(entry.model, "llama3.2");
+        assert_eq!(entry.requests_total, 2);
+        assert_eq!(entry.requests_recent, 1);
+        // r1 (recent): new_input 1000 + completion 100 = 1100.
+        // r2 (40 days old): new_input (2000-1000) + completion 200 = 1200.
+        assert_eq!(entry.tokens_total, 2300);
+        assert_eq!(entry.tokens_recent, 1100);
+        assert!(entry.first_seen_at < entry.last_seen_at);
+    }
+
+    #[test]
+    fn deleting_models_removes_only_their_rows() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let now = Local::now().timestamp();
+        insert_usage(&db, "r1", "llama3.2", 100, 10, 0, now);
+        insert_usage(&db, "r2", "qwen2.5", 100, 10, 0, now);
+
+        let result = db
+            .delete_model_data(&["llama3.2".to_string()])
+            .expect("delete");
+        assert_eq!(result.rows_affected, 1);
+        assert_eq!(result.models, vec!["llama3.2".to_string()]);
+
+        let catalog = db.model_catalog().expect("catalog");
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].model, "qwen2.5");
+    }
+
+    #[test]
+    fn deleting_a_missing_model_is_a_no_op() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let result = db
+            .delete_model_data(&["nonexistent".to_string()])
+            .expect("delete");
+        assert_eq!(result.rows_affected, 0);
+    }
+
+    #[test]
+    fn merging_models_relabels_and_preserves_totals() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let now = Local::now().timestamp();
+        insert_usage(&db, "r1", "llama3.2", 1000, 100, 0, now);
+        insert_usage(&db, "r2", "llama3.2", 500, 50, 0, now);
+
+        let before = db.snapshot().expect("snapshot before");
+
+        let result = db
+            .merge_models(&["llama3.2".to_string()], "llama3.2:latest")
+            .expect("merge");
+        assert_eq!(result.rows_affected, 2);
+        assert_eq!(result.target, Some("llama3.2:latest".to_string()));
+
+        let after = db.snapshot().expect("snapshot after");
+        assert_eq!(after.totals.requests, before.totals.requests);
+        assert_eq!(after.totals.total_tokens, before.totals.total_tokens);
+
+        let catalog = db.model_catalog().expect("catalog");
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].model, "llama3.2:latest");
+        assert_eq!(catalog[0].requests_total, 2);
+    }
+
+    #[test]
+    fn merging_into_an_existing_model_combines_stats() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let now = Local::now().timestamp();
+        insert_usage(&db, "r1", "a", 100, 10, 0, now);
+        insert_usage(&db, "r2", "b", 200, 20, 0, now);
+
+        let result = db.merge_models(&["a".to_string()], "b").expect("merge");
+        assert_eq!(result.rows_affected, 1);
+
+        let catalog = db.model_catalog().expect("catalog");
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].model, "b");
+        assert_eq!(catalog[0].requests_total, 2);
+        assert_eq!(catalog[0].tokens_total, 330); // (100+10) + (200+20) = 330
+    }
+
+    #[test]
+    fn merging_allows_the_target_to_be_one_of_the_sources() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let now = Local::now().timestamp();
+        insert_usage(&db, "r1", "a", 100, 10, 0, now);
+        insert_usage(&db, "r2", "b", 200, 20, 0, now);
+
+        let result = db
+            .merge_models(&["a".to_string(), "b".to_string()], "b")
+            .expect("merge");
+        assert_eq!(result.rows_affected, 1);
+
+        let catalog = db.model_catalog().expect("catalog");
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].model, "b");
+        assert_eq!(catalog[0].requests_total, 2);
+    }
+
+    #[test]
+    fn model_mutations_validate_input() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        assert!(db.delete_model_data(&[]).is_err());
+        assert!(db.merge_models(&[], "x").is_err());
+        assert!(db.merge_models(&["x".to_string()], "   ").is_err());
+        assert!(db.merge_models(&["x".to_string()], "x").is_err());
+
+        // Duplicate sources
+        let result = db
+            .merge_models(&["x".to_string(), "x".to_string()], "y")
+            .expect("merge");
+        assert_eq!(result.models.len(), 1);
+    }
+
+    #[test]
+    fn model_mutations_do_not_touch_balance_history() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let now = Local::now().timestamp();
+        db.insert_deepseek_balances(
+            true,
+            &[BalanceInfoInput {
+                currency: "USD".to_string(),
+                total_balance: "10.00".to_string(),
+                granted_balance: None,
+                topped_up_balance: None,
+            }],
+            now,
+        )
+        .expect("insert balance");
+
+        let before = db
+            .balance_history("USD", 0, now + 1)
+            .expect("history before");
+        assert_eq!(before.len(), 1);
+
+        insert_usage(&db, "r1", "llama3.2", 100, 10, 0, now);
+        db.delete_model_data(&["llama3.2".to_string()])
+            .expect("delete");
+
+        let after = db
+            .balance_history("USD", 0, now + 1)
+            .expect("history after");
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].total_balance, "10.00");
     }
 }

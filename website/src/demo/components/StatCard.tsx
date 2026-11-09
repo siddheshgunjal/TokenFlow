@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { motion } from "framer-motion";
 
 import { classNames } from "../lib/format";
@@ -10,7 +10,10 @@ const accents = {
   sky: "bg-accent-blue/10 text-accent-blue ring-accent-blue/20",
 } as const;
 
-export function StatCard({
+// Memoized: the dashboard re-renders on every snapshot, but a card whose
+// label/value/hint are unchanged (and whose icon element is hoisted) is
+// skipped entirely.
+export const StatCard = memo(function StatCard({
   label,
   value,
   hint,
@@ -56,4 +59,4 @@ export function StatCard({
       ) : null}
     </motion.div>
   );
-}
+});

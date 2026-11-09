@@ -2,11 +2,16 @@ import {
   mockBalanceHistory,
   mockCoreSnapshot,
   mockDayUsageDetail,
+  mockDeleteModelData,
+  mockMergeModels,
+  mockModelCatalog,
 } from "./mock";
 import type {
   BalanceSnapshot,
   DashboardSummary,
   DayUsageDetail,
+  ModelCatalogEntry,
+  ModelMutationResult,
   RefreshResult,
 } from "./types";
 
@@ -44,4 +49,24 @@ export async function getBalanceHistory({
 }): Promise<BalanceSnapshot[]> {
   await wait(120);
   return mockBalanceHistory(since, until, currency);
+}
+
+export async function getModelCatalog(): Promise<ModelCatalogEntry[]> {
+  await wait(80);
+  return mockModelCatalog();
+}
+
+export async function deleteModelData(
+  models: string[],
+): Promise<ModelMutationResult> {
+  await wait(180);
+  return mockDeleteModelData(models);
+}
+
+export async function mergeModels(
+  sources: string[],
+  targetModel: string,
+): Promise<ModelMutationResult> {
+  await wait(180);
+  return mockMergeModels(sources, targetModel);
 }

@@ -92,6 +92,7 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({
   models,
   modelColors,
   detailRefreshKey,
+  modelMutationKey,
 }: {
   daily: DailyUsage[];
   streakDays: number;
@@ -106,6 +107,7 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({
   modelColors: Map<string, ModelColor>;
   /** The core revision; used to refetch today's detail as usage arrives. */
   detailRefreshKey: number;
+  modelMutationKey: number;
 }) {
   const [metric, setMetric] = useState<Metric>("total");
 
@@ -419,6 +421,7 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({
           models={models}
           modelColors={modelColors}
           refreshKey={detailRefreshKey}
+          modelMutationKey={modelMutationKey}
         />
       </div>
     </section>

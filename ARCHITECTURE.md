@@ -48,6 +48,8 @@ The core owns all data collection and querying; the UI is a pure renderer. The o
 | Snapshot aggregation | `snapshot.rs` | SQL/query logic |
 | Rebuild scheduling | `snapshot.rs` | timers |
 | Manual refresh | `commands::refresh_core` | direct provider calls |
+| Model cleanup | `commands::delete_model_data`, `commands::merge_models` | direct `DELETE`/`UPDATE` SQL |
+| Model catalog | `commands::get_model_catalog` | SQL/query logic |
 | Window lifecycle | `windows.rs` | — |
 | Rendering | `App.tsx`, `Widget.tsx` | — |
 
@@ -134,11 +136,15 @@ A background worker polls `api.deepseek.com` at configured intervals (default 15
 
 The core owns all data. Both windows consume the single `core-snapshot` event and the `refresh_core` command through the `useCoreSnapshot` hook. The dashboard displays totals, today's streak, model breakdown, 365-day series, recent requests, balance, and proxy status. The tray-anchored metrics panel shows live input/output/cache numbers, a 14-day graph, DeepSeek balance breakdown, and Open/Quit actions. There is no UI polling: the core pushes snapshots on change, and a hidden window buffers the latest value so a reveal is instant. Mock mode is available for `npm run dev` without Tauri.
 
+The Models card exposes a **Manage** dialog. It loads the full recorded-model catalog lazzy through `get_model_catalog`, and delete/merge actions run through core commands in single SQLite transactions. Both actions mark the snapshot dirty and rebuild immediately; the UI only renders the resulting `core-snapshot`. Day-detail invalidation uses an explicit mutation key because the previous `todayRequests` key does not change when older history is edited.
+
 The dashboard's activity calendar supports a **day drill-down**. The selected day is owned by the `Dashboard` page (it defaults to today and is always present — never nullable). Clicking a non-future day, navigating months, or pressing "Today" updates the selection; month navigation re-anchors the selection to the same day-of-month in the new month, clamped to the month length and to today for the current month. The selected day drives a lazy `get_day_usage_detail` command (through the `useDayUsageDetail` hook) that returns a 24-bucket, per-model hourly breakdown for that day; this payload is computed on demand and is deliberately **not** part of `DashboardSummary`, so the snapshot and widget payloads are unchanged. The detail panel and the Models card share a single model-color map built once per snapshot so a model's color is identical in both. The DeepSeek balance chart re-anchors its Day/Week/Month ranges to the selected day rather than "now".
 
 ## Storage model
 
 TokenFlow uses a single shared SQLite connection in WAL mode behind a `Mutex`. Writes occur via `spawn_blocking` to avoid blocking the stream reactor. The connection has `busy_timeout` set, `synchronous = NORMAL`, and embedded migrations manage schema evolution. A unique index on `request_id` ensures deduplication via `INSERT OR IGNORE`. Local-day grouping uses `date(created_at, 'unixepoch', 'localtime')` with DST-safe boundaries. Cached-input token modeling tracks `prompt_eval_cached_count` and computes `uncached_input = prompt_eval_count - prompt_eval_cached_count`, with `cache_hit_rate = cached / total` clamped to prevent rates above 100%.
+
+Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique index are never changed. A bulk mutation runs a best-effort `PRAGMA wal_checkpoint(TRUNCATE)`; no `VACUUM` is performed.
 
 ## Security and privacy model
 

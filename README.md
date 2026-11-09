@@ -37,6 +37,7 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 - Monthly calendar heat-map to track you usage for every month
 - Click any day to drill into a 24-hour token chart, with All / Top 5 / per-model filters and a token-weighted cache rate
 - Track Actual Input/Output tokens & Cache Hit Rate for your local models
+- Delete or merge recorded model usage from the dashboard to keep experiments out of your metrics. This affects TokenFlow history only; it does not uninstall Ollama models.
 - Your Deepseek account balance tracking
 - Deepseek balance interactive trend chart (Day/Week/Month anchored to the selected day)
 

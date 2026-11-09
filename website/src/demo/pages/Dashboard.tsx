@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 
 import { DeepSeekCard } from "../components/DeepSeekCard";
 import { Icon } from "../components/Icons";
@@ -23,12 +23,20 @@ const ActivityHeatmap = lazy(() =>
   })),
 );
 
+// Static elements keep the memoized StatCard props referentially stable, so
+// a snapshot that changes only some values re-renders only the affected card.
+const INPUT_ICON = <Icon name="arrow-down-left" />;
+const OUTPUT_ICON = <Icon name="arrow-up-right" />;
+const CACHE_ICON = <Icon name="database" />;
+const RANGE_ICON = <Icon name="activity" />;
+
 export function Dashboard({
   data,
   onOpenSettings,
   onRefresh,
   error,
   refreshing = false,
+  onModelsChanged,
 }: {
   data: DashboardSummary;
   onOpenSettings: () => void;
@@ -37,8 +45,10 @@ export function Dashboard({
   error: string | null;
   /** Shared refresh-in-progress flag. */
   refreshing?: boolean;
+  onModelsChanged: () => void;
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
+  const [modelMutationKey, setModelMutationKey] = useState(0);
   // The selected day defaults to today and is always present: the day-detail
   // panel has no nullable state.
   const [selectedDate, setSelectedDate] = useState<string>(() => todayKey());
@@ -47,6 +57,11 @@ export function Dashboard({
     ? `http://${data.proxy.bindAddress}`
     : "http://127.0.0.1:11435";
 
+  const handleModelsChanged = useCallback(() => {
+    setModelMutationKey((v) => v + 1);
+    onModelsChanged();
+  }, [onModelsChanged]);
+
   // One color map per snapshot drives both the Models card and the day-detail
   // chart so a model's color is identical in both.
   const modelColors = useMemo(
@@ -54,17 +69,19 @@ export function Dashboard({
     [data.models],
   );
 
-  function handleMonthOffsetChange(nextOffset: number) {
+  // Stable identities so the memoized heatmap skips re-renders when its data
+  // did not change.
+  const handleMonthOffsetChange = useCallback((nextOffset: number) => {
     setMonthOffset(nextOffset);
     setSelectedDate((current) => dateKeyForMonthOffset(current, nextOffset));
-  }
+  }, []);
 
   // Kept separate from month navigation so "Today" always selects today, even
   // when the current selection is already in the current month.
-  function handleGoToToday() {
+  const handleGoToToday = useCallback(() => {
     setMonthOffset(0);
     setSelectedDate(todayKey());
-  }
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -124,14 +141,14 @@ export function Dashboard({
           label="Input today"
           value={formatCompact(data.totals.todayNewInputTokens)}
           hint={`${formatNumber(data.totals.todayRequests)} Requests`}
-          icon={<Icon name="arrow-down-left" />}
+          icon={INPUT_ICON}
           accent="teal"
         />
         <StatCard
           label="Output today"
           value={formatCompact(data.totals.todayOutputTokens)}
           hint="Generated Tokens"
-          icon={<Icon name="arrow-up-right" />}
+          icon={OUTPUT_ICON}
           accent="sky"
           delay={0.05}
         />
@@ -139,7 +156,7 @@ export function Dashboard({
           label="Cache hit rate"
           value={formatPercent(data.totals.cacheHitRate)}
           hint={`Today ${formatPercent(data.totals.todayCacheHitRate)} · token-weighted`}
-          icon={<Icon name="database" />}
+          icon={CACHE_ICON}
           accent="violet"
           delay={0.1}
         />
@@ -149,7 +166,7 @@ export function Dashboard({
           hint={`New in ${formatCompact(
             data.totals.newInputTokens,
           )} · Out ${formatCompact(data.totals.outputTokens)}`}
-          icon={<Icon name="activity" />}
+          icon={RANGE_ICON}
           accent="amber"
           delay={0.15}
         />
@@ -168,7 +185,8 @@ export function Dashboard({
               onSelectDate={setSelectedDate}
               models={data.models}
               modelColors={modelColors}
-              detailRefreshKey={data.revision}
+              detailRefreshKey={data.totals.todayRequests}
+              modelMutationKey={modelMutationKey}
             />
           </Suspense>
         </div>
@@ -186,7 +204,11 @@ export function Dashboard({
 
       <div className="grid auto-rows-[24rem] gap-4 lg:grid-cols-5">
         <div className="min-h-0 min-w-0 lg:col-span-2">
-          <ModelBreakdown models={data.models} modelColors={modelColors} />
+          <ModelBreakdown
+            models={data.models}
+            modelColors={modelColors}
+            onModelsChanged={handleModelsChanged}
+          />
         </div>
         <div className="min-h-0 min-w-0 lg:col-span-3">
           <RecentRequests logs={data.recent} />
