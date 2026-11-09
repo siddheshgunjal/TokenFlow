@@ -26,7 +26,7 @@
       Everything stays local and the DeepSeek API key is kept in the
       operating system credential store. Telemetry never leaves the machine.
     </p>
-    <p><strong>Track Your Usage</strong></p>
+    <p><em>Track Your Usage</em></p>
     <ul>
       <li>Monitor token counts from Ollama conversations in real-time</li>
       <li>Watch input, output, and cached token breakdowns</li>
@@ -36,14 +36,14 @@
       <li>Track actual Input/Output tokens and Cache Hit Rate</li>
       <li>DeepSeek account balance tracking with interactive trend charts</li>
     </ul>
-    <p><strong>Private &amp; Local</strong></p>
+    <p><em>Private &amp; Local</em></p>
     <ul>
       <li>Everything runs on your machine - no data leaves your desktop</li>
       <li>API keys stored securely in your OS keychain</li>
       <li
             >Full offline functionality (DeepSeek balance tracking requires internet)</li>
     </ul>
-    <p><strong>Native Desktop Experience</strong></p>
+    <p><em>Native Desktop Experience</em></p>
     <ul>
       <li>Tray-anchored metrics panel always at hand</li>
       <li>Dashboard with totals, today's streak, and model breakdown</li>
@@ -59,7 +59,7 @@
     <binary>tokenflow</binary>
   </provides>
   <releases>
-    <release version="0.1.0+alpha.2" date="2026-11-08" />
+    <release version="0.1.0+alpha.2" date="2026-11-09" />
     <release version="0.1.0+alpha.1" date="2026-11-06" />
   </releases>
 </component>
