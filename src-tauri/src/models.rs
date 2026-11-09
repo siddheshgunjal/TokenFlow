@@ -242,3 +242,26 @@ pub struct DeepSeekBalanceInfo {
     #[serde(default)]
     pub topped_up_balance: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogEntry {
+    pub model: String,
+    pub requests_total: i64,
+    pub tokens_total: i64,
+    pub requests_recent: i64,
+    pub tokens_recent: i64,
+    pub first_seen_at: i64,
+    pub last_seen_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelMutationResult {
+    /// Rows deleted or relabeled.
+    pub rows_affected: usize,
+    /// Effective source names after validation and deduplication.
+    pub models: Vec<String>,
+    /// `Some(target)` for a merge, `None` for a delete.
+    pub target: Option<String>,
+}

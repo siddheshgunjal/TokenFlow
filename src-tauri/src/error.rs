@@ -18,6 +18,9 @@ pub enum AppError {
     #[error("launch at login: {0}")]
     Autostart(String),
 
+    #[error("{0}")]
+    InvalidInput(String),
+
     #[error("Tauri error: {0}")]
     Tauri(#[from] tauri::Error),
 }
