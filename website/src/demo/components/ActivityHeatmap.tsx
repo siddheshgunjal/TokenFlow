@@ -89,6 +89,7 @@ export function ActivityHeatmap({
   models,
   modelColors,
   detailRefreshKey,
+  modelMutationKey,
 }: {
   daily: DailyUsage[];
   streakDays: number;
@@ -103,6 +104,8 @@ export function ActivityHeatmap({
   modelColors: Map<string, ModelColor>;
   /** The core revision; used to refetch today's detail as usage arrives. */
   detailRefreshKey: number;
+  /** Bumped after a model mutation so the selected day refetches. */
+  modelMutationKey: number;
 }) {
   const [metric, setMetric] = useState<Metric>("total");
 
@@ -416,6 +419,7 @@ export function ActivityHeatmap({
           models={models}
           modelColors={modelColors}
           refreshKey={detailRefreshKey}
+          modelMutationKey={modelMutationKey}
         />
       </div>
     </section>

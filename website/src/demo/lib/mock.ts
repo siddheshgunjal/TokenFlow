@@ -4,7 +4,9 @@ import type {
   DayUsageDetail,
   DashboardSummary,
   DeepSeekStatus,
+  ModelCatalogEntry,
   ModelHourlyUsage,
+  ModelMutationResult,
   ModelUsage,
   OllamaLog,
   Settings,
@@ -22,6 +24,29 @@ const MODEL_NAMES = [
 // Model share of a day's tokens; mirrors `buildModels` so the day-detail mock
 // splits the same way the 30-day snapshot does.
 const MODEL_SHARES = [0.44, 0.28, 0.18, 0.1];
+
+interface MockModel {
+  name: string;
+  share: number;
+  deleted: boolean;
+}
+
+// In-memory model state so the browser preview reflects delete/merge actions
+// across the dashboard, models card, and day drill-down.
+let mockModelState: MockModel[] = MODEL_NAMES.map((name, index) => ({
+  name,
+  share: MODEL_SHARES[index],
+  deleted: false,
+}));
+
+// Monotonic revision for the mock snapshot. It must increase on every call so
+// the core-snapshot revision guard in `useDemoSnapshot` accepts fresh mock
+// payloads (a constant revision would be dropped after the first load).
+let mockRev = 0;
+function mockRevision(): number {
+  mockRev += 1;
+  return mockRev;
+}
 
 // Deterministic pseudo-random values keep the browser preview stable across
 // refreshes. Real data always comes from the Rust backend.
@@ -75,34 +100,85 @@ function buildDaily(): DailyUsage[] {
   return daily;
 }
 
+function activeMockModels() {
+  return mockModelState.filter((model) => !model.deleted);
+}
+
+function retainedMockShare() {
+  return mockModelState.reduce(
+    (sum, model) => (model.deleted ? sum : sum + model.share),
+    0,
+  );
+}
+
+function normalizeMockShares() {
+  const retained = retainedMockShare();
+  if (retained === 0) return [];
+  return mockModelState
+    .filter((model) => !model.deleted)
+    .map((model) => model.share / retained);
+}
+
+// The daily series after accounting for deleted models: every day's token
+// and request fields scale by the retained share. A merge does not change the
+// retained share, so totals stay constant.
+function mockDaily(): DailyUsage[] {
+  const baseDaily = buildDaily();
+  const retained = retainedMockShare();
+  if (retained === 0) {
+    return baseDaily.map((day) => ({
+      ...day,
+      newInputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      requests: 0,
+      contextProcessedTokens: 0,
+      cachedProcessedTokens: 0,
+    }));
+  }
+  return baseDaily.map((day) => ({
+    ...day,
+    newInputTokens: Math.floor(day.newInputTokens * retained),
+    outputTokens: Math.floor(day.outputTokens * retained),
+    totalTokens: Math.floor(day.totalTokens * retained),
+    requests: Math.floor(day.requests * retained),
+    contextProcessedTokens: Math.floor(day.contextProcessedTokens * retained),
+    cachedProcessedTokens: Math.floor(day.cachedProcessedTokens * retained),
+  }));
+}
+
 function buildModels(
   totalTokens: number,
   newInputTokens: number,
   totalRequests: number,
 ): ModelUsage[] {
-  return MODEL_NAMES.map((model, index) => {
-    const total = Math.floor(totalTokens * MODEL_SHARES[index]);
-    const newInput = Math.floor(newInputTokens * MODEL_SHARES[index]);
+  const active = activeMockModels();
+  if (active.length === 0) return [];
+  const shares = normalizeMockShares();
+
+  // Largest-remainder allocation so the per-model totals sum exactly to the
+  // grand totals (no token is lost to rounding).
+  const totals = distribute(totalTokens, shares);
+  const newInputs = distribute(newInputTokens, shares);
+  const requests = distribute(totalRequests, shares);
+
+  return active.map((model, index) => {
+    const total = totals[index];
+    const newInput = newInputs[index];
     const output = Math.max(0, total - newInput);
     const context = Math.floor(newInput * (2.2 + index * 0.6)) + 512;
     const cached = Math.floor(context * (0.24 + index * 0.07));
     return {
-      model,
+      model: model.name,
       newInputTokens: newInput,
       outputTokens: output,
       contextTokens: context,
       cachedInputTokens: cached,
       totalTokens: total,
-      requests: Math.floor(totalRequests * MODEL_SHARES[index]),
+      requests: requests[index],
       cacheHitRate: context > 0 ? Math.min(1, cached / context) : 0,
     };
   });
-}
-
-let mockRev = 0;
-function mockRevision(): number {
-  mockRev += 1;
-  return mockRev;
 }
 
 /**
@@ -111,7 +187,8 @@ function mockRevision(): number {
  * exactly `total`.
  */
 function distribute(total: number, weights: number[]): number[] {
-  if (total <= 0) return new Array(weights.length).fill(0);
+  if (total <= 0 || weights.length === 0)
+    return new Array(weights.length).fill(0);
   const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
   if (weightSum <= 0) return new Array(weights.length).fill(0);
 
@@ -167,28 +244,133 @@ function zeroedHours(): ModelHourlyUsage["hours"] {
   }));
 }
 
+export function mockModelCatalog(): ModelCatalogEntry[] {
+  const daily = mockDaily();
+  const active = activeMockModels();
+  if (active.length === 0) return [];
+
+  const totalTokens = daily.reduce((sum, day) => sum + day.totalTokens, 0);
+  const totalRequests = daily.reduce((sum, day) => sum + day.requests, 0);
+  const recentDaily = daily.slice(-30);
+  const recentTokens = recentDaily.reduce(
+    (sum, day) => sum + day.totalTokens,
+    0,
+  );
+  const recentRequests = recentDaily.reduce(
+    (sum, day) => sum + day.requests,
+    0,
+  );
+
+  const now = Date.now();
+  const yearAgo = now - 365 * 24 * 60 * 60 * 1000;
+  const shares = normalizeMockShares();
+
+  // Largest-remainder allocation so the per-model figures sum exactly to the
+  // all-time and recent grand totals.
+  const tokensTotal = distribute(totalTokens, shares);
+  const requestsTotal = distribute(totalRequests, shares);
+  const tokensRecent = distribute(recentTokens, shares);
+  const requestsRecent = distribute(recentRequests, shares);
+
+  return active
+    .map((model, index) => ({
+      model: model.name,
+      requestsTotal: requestsTotal[index],
+      tokensTotal: tokensTotal[index],
+      requestsRecent: requestsRecent[index],
+      tokensRecent: tokensRecent[index],
+      firstSeenAt: Math.floor(yearAgo / 1000),
+      lastSeenAt: Math.floor(now / 1000),
+    }))
+    .sort(
+      (a, b) => b.tokensTotal - a.tokensTotal || a.model.localeCompare(b.model),
+    );
+}
+
+export function mockDeleteModelData(models: string[]): ModelMutationResult {
+  if (models.length === 0) {
+    throw new Error("Select at least one model to delete.");
+  }
+
+  const catalogBefore = mockModelCatalog();
+  const targetNames = new Set(models);
+  const affectedModels = catalogBefore
+    .filter((entry) => targetNames.has(entry.model))
+    .map((entry) => entry.model);
+
+  const rowsAffected = affectedModels.length * 10;
+
+  affectedModels.forEach((name) => {
+    const index = mockModelState.findIndex((model) => model.name === name);
+    if (index !== -1) mockModelState[index].deleted = true;
+  });
+
+  return { rowsAffected, models: affectedModels, target: null };
+}
+
+export function mockMergeModels(
+  sources: string[],
+  targetModel: string,
+): ModelMutationResult {
+  const target = targetModel.trim();
+  if (!target) throw new Error("A target model name is required.");
+
+  const effectiveSources = sources.filter((source) => source !== target);
+  if (effectiveSources.length === 0) {
+    throw new Error("Select at least one model other than the target.");
+  }
+
+  if (!mockModelState.some((model) => model.name === target)) {
+    mockModelState.push({ name: target, share: 0, deleted: false });
+  }
+
+  const targetIdx = mockModelState.findIndex((model) => model.name === target);
+  let combinedShare = 0;
+
+  effectiveSources.forEach((source) => {
+    const sourceIdx = mockModelState.findIndex(
+      (model) => model.name === source,
+    );
+    if (sourceIdx !== -1) {
+      combinedShare += mockModelState[sourceIdx].share;
+      mockModelState[sourceIdx].deleted = true;
+    }
+  });
+
+  mockModelState[targetIdx].share += combinedShare;
+
+  return {
+    rowsAffected: effectiveSources.length * 10,
+    models: effectiveSources,
+    target,
+  };
+}
+
 /**
  * Browser-preview stand-in for `get_day_usage_detail`. Splits the matching
- * `DailyUsage` day across 24 hours and the four mock models so panel totals
+ * `DailyUsage` day across 24 hours and the active mock models so panel totals
  * exactly match the calendar day.
  */
 export function mockDayUsageDetail(date: string): DayUsageDetail {
-  const day = buildDaily().find((entry) => entry.date === date);
+  const daily = mockDaily();
+  const day = daily.find((entry) => entry.date === date);
+  const active = activeMockModels();
 
-  if (!day || day.requests === 0) {
+  if (!day || day.requests === 0 || active.length === 0) {
     return { date, hours: zeroedHours(), models: [] };
   }
 
   const seed = seedForDateKey(date);
   const hourWeights = activityWeights(seed);
+  const shares = normalizeMockShares();
 
-  const modelTotals = distribute(day.totalTokens, MODEL_SHARES);
-  const modelNewInput = distribute(day.newInputTokens, MODEL_SHARES);
-  const modelContext = distribute(day.contextProcessedTokens, MODEL_SHARES);
-  const modelCached = distribute(day.cachedProcessedTokens, MODEL_SHARES);
-  const modelRequests = distribute(day.requests, MODEL_SHARES);
+  const modelTotals = distribute(day.totalTokens, shares);
+  const modelNewInput = distribute(day.newInputTokens, shares);
+  const modelContext = distribute(day.contextProcessedTokens, shares);
+  const modelCached = distribute(day.cachedProcessedTokens, shares);
+  const modelRequests = distribute(day.requests, shares);
 
-  const models: ModelHourlyUsage[] = MODEL_NAMES.map((model, index) => {
+  const models: ModelHourlyUsage[] = active.map((model, index) => {
     const hourTotals = distribute(modelTotals[index], hourWeights);
     const hourNewInput = distribute(modelNewInput[index], hourWeights);
     const hourContext = distribute(modelContext[index], hourWeights);
@@ -217,7 +399,7 @@ export function mockDayUsageDetail(date: string): DayUsageDetail {
       };
     });
 
-    return { model, hours };
+    return { model: model.name, hours };
   });
 
   // All-model hours are derived by summing the per-model buckets so the panel
@@ -269,7 +451,8 @@ export function mockCoreSnapshot(): DashboardSummary {
 }
 
 export function mockDashboard(rangeDays = 30): DashboardSummary {
-  const daily = buildDaily();
+  const daily = mockDaily();
+  const active = activeMockModels();
   const range = daily.slice(-Math.min(Math.max(rangeDays, 1), 365));
   const newInputTokens = range.reduce(
     (sum, day) => sum + day.newInputTokens,
@@ -311,25 +494,28 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
     else break;
   }
 
-  const recent: OllamaLog[] = Array.from({ length: 15 }, (_, index) => {
-    const model = MODEL_NAMES[index % MODEL_NAMES.length];
-    const prompt = 240 + Math.floor(noise(index + 31) * 1800);
-    const completion =
-      index % 3 === 0 ? 0 : Math.floor(noise(index + 47) * 900);
-    const cached = Math.floor(prompt * (0.15 + noise(index + 53) * 0.5));
-    return {
-      id: 1000 - index,
-      model,
-      endpoint: index % 4 === 0 ? "/v1/chat/completions" : "/api/chat",
-      inputTokens: prompt,
-      outputTokens: completion,
-      cachedInputTokens: cached,
-      totalTokens: prompt + completion,
-      cacheHitRate: prompt > 0 ? Math.min(1, cached / prompt) : 0,
-      createdAt: Math.floor(Date.now() / 1000) - index * 780,
-      durationMs: 900 + Math.floor(noise(index + 61) * 7000),
-    };
-  });
+  const recent: OllamaLog[] =
+    active.length === 0
+      ? []
+      : Array.from({ length: 15 }, (_, index) => {
+          const model = active[index % active.length].name;
+          const prompt = 240 + Math.floor(noise(index + 31) * 1800);
+          const completion =
+            index % 3 === 0 ? 0 : Math.floor(noise(index + 47) * 900);
+          const cached = Math.floor(prompt * (0.15 + noise(index + 53) * 0.5));
+          return {
+            id: 1000 - index,
+            model,
+            endpoint: index % 4 === 0 ? "/v1/chat/completions" : "/api/chat",
+            inputTokens: prompt,
+            outputTokens: completion,
+            cachedInputTokens: cached,
+            totalTokens: prompt + completion,
+            cacheHitRate: prompt > 0 ? Math.min(1, cached / prompt) : 0,
+            createdAt: Math.floor(Date.now() / 1000) - index * 780,
+            durationMs: 900 + Math.floor(noise(index + 61) * 7000),
+          };
+        });
 
   return {
     revision: mockRevision(),

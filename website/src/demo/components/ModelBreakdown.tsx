@@ -1,16 +1,38 @@
 import { motion } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatCompact, formatNumber, formatPercent } from "../lib/format";
 import { colorForModel, type ModelColor } from "../lib/modelColors";
 import type { ModelUsage } from "../lib/types";
+import { Icon } from "./Icons";
+import { ManageModelsDialog } from "./ManageModelsDialog";
 
 export function ModelBreakdown({
   models,
   modelColors,
+  onModelsChanged,
 }: {
   models: ModelUsage[];
   modelColors: Map<string, ModelColor>;
+  onModelsChanged: () => void;
 }) {
+  const [manageOpen, setManageOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear a pending notice timer on unmount so it never fires late.
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    };
+  }, []);
+
+  const showNotice = useCallback((message: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(message);
+    noticeTimer.current = setTimeout(() => setNotice(null), 5000);
+  }, []);
+
   const maxTokens = Math.max(...models.map((model) => model.totalTokens), 1);
   const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
 
@@ -23,10 +45,33 @@ export function ModelBreakdown({
             New input, output, and cache share
           </p>
         </div>
-        <span className="chip shrink-0 whitespace-nowrap">
-          {formatNumber(models.length)} models
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="chip shrink-0 whitespace-nowrap">
+            {formatNumber(models.length)} models
+          </span>
+          <button
+            onClick={() => setManageOpen(true)}
+            className="rounded-md border border-white/10 p-1 text-white/40 hover:bg-white/5 hover:text-white transition-colors"
+            aria-label="Manage models"
+            title="Manage models"
+          >
+            <Icon name="settings" className="h-4 w-4" />
+          </button>
+        </div>
       </div>
+
+      {notice && (
+        <motion.div
+          role="status"
+          aria-live="polite"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          className="mt-2 rounded-md bg-blue-500/10 p-2 text-[11px] text-blue-300/80 border border-blue-500/20"
+        >
+          {notice}
+        </motion.div>
+      )}
 
       {models.length === 0 ? (
         <div className="mt-5 flex min-h-0 flex-1 flex-col justify-center rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
@@ -93,6 +138,13 @@ export function ModelBreakdown({
           })}
         </div>
       )}
+
+      <ManageModelsDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        onCompleted={showNotice}
+        onModelsChanged={onModelsChanged}
+      />
     </section>
   );
 }

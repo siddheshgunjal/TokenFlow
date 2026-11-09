@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useCallback } from "react";
 
 import { Icon } from "./components/Icons";
 import { Sidebar } from "./components/Sidebar";
@@ -18,6 +19,12 @@ export function DemoApp() {
     upstreamUrl: "",
     error: null,
   };
+
+  // Rebuilds the stateful mock snapshot after a delete/merge so the cards,
+  // totals, and heatmap all reflect the mutation.
+  const handleModelsChanged = useCallback(() => {
+    void refresh();
+  }, [refresh]);
 
   return (
     <div className="app-surface flex h-full overflow-hidden">
@@ -108,6 +115,7 @@ export function DemoApp() {
                 onRefresh={() => void refresh()}
                 error={error}
                 refreshing={refreshing}
+                onModelsChanged={handleModelsChanged}
               />
             </motion.div>
           ) : (

@@ -29,13 +29,19 @@ export function DayDetailPanel({
   models,
   modelColors,
   refreshKey,
+  modelMutationKey,
 }: {
   date: string;
   models: ModelUsage[];
   modelColors: Map<string, ModelColor>;
   refreshKey: number;
+  modelMutationKey: number;
 }) {
-  const { detail, loading, error, retry } = useDayUsageDetail(date, refreshKey);
+  const { detail, loading, error, retry } = useDayUsageDetail(
+    date,
+    refreshKey,
+    modelMutationKey,
+  );
   const [filter, setFilter] = useState<ModelFilter>({ kind: "all" });
 
   const isToday = date === todayKey();
@@ -357,7 +363,7 @@ function PanelEmpty({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-[160px] flex-col items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-6 text-center">
       <Icon name="activity" className="h-4 w-4 text-muted/70" />
-      <p className="mt-2 text-xs text-muted">{children}</p>
+      <div className="mt-2 text-xs text-muted">{children}</div>
     </div>
   );
 }

@@ -25,6 +25,24 @@ export interface ModelUsage {
   cacheHitRate: number;
 }
 
+/** Full-history per-model catalog, independent of the 30-day window. */
+export interface ModelCatalogEntry {
+  model: string;
+  requestsTotal: number;
+  tokensTotal: number;
+  requestsRecent: number;
+  tokensRecent: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+}
+
+/** Result of a delete or merge mutation. */
+export interface ModelMutationResult {
+  rowsAffected: number;
+  models: string[];
+  target: string | null;
+}
+
 export interface DailyUsage {
   date: string;
   newInputTokens: number;
