@@ -2,6 +2,10 @@ name: Deploy website
 
 # Deploys the standalone site in website/ to GitHub Pages.
 # Repository settings -> Pages -> Source must be "GitHub Actions".
+#
+# The custom domain (https://token-flow.xyz) serves the site from "/". If the
+# site is ever deployed as a project Pages site without the custom domain,
+# set the WEBSITE_BASE repository variable to /TokenFlow/.
 
 on:
   push:
@@ -48,20 +52,15 @@ jobs:
         run: npm ci
 
       - name: Configure Pages
-        id: pages
         uses: actions/configure-pages@v5
 
       - name: Resolve website base path
         shell: bash
         env:
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          CONFIGURED_BASE: ${{ vars.WEBSITE_BASE }}
         run: |
-          base="$BASE_PATH"
-          if [ -z "$base" ] || [ "$base" = "/" ]; then
-            base="/"
-          else
-            base="${base%/}/"
-          fi
+          base="${CONFIGURED_BASE:-/}"
+          [ "$base" = "/" ] || base="${base%/}/"
           printf 'WEBSITE_BASE=%s\n' "$base" >> "$GITHUB_ENV"
 
       - name: Build website
