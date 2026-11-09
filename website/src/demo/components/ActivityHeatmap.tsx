@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import { DayDetailPanel } from "./DayDetailPanel";
 import {
@@ -78,7 +78,10 @@ const LEVEL_STYLES: Record<Metric, string[]> = {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function ActivityHeatmap({
+// Memoized on its props: the reconciliation in the snapshot hook keeps
+// unchanged `daily`/`models` slices (and the memoized `modelColors`)
+// referentially stable, so a DeepSeek-only refresh skips the calendar grid.
+export const ActivityHeatmap = memo(function ActivityHeatmap({
   daily,
   streakDays,
   monthOffset,
@@ -104,7 +107,6 @@ export function ActivityHeatmap({
   modelColors: Map<string, ModelColor>;
   /** The core revision; used to refetch today's detail as usage arrives. */
   detailRefreshKey: number;
-  /** Bumped after a model mutation so the selected day refetches. */
   modelMutationKey: number;
 }) {
   const [metric, setMetric] = useState<Metric>("total");
@@ -424,7 +426,7 @@ export function ActivityHeatmap({
       </div>
     </section>
   );
-}
+});
 
 function valueFor(day: DailyUsage | undefined, metric: Metric): number {
   if (!day) return 0;

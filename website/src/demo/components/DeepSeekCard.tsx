@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { memo, Suspense, lazy } from "react";
 
 import { classNames } from "../lib/format";
 import { formatMoney, formatRelative } from "../lib/format";
@@ -13,7 +13,9 @@ const BalanceChart = lazy(() =>
   })),
 );
 
-export function DeepSeekCard({
+// Memoized so a usage-only refresh (same balance, same handlers) does not
+// re-render the balance card or its chart container.
+export const DeepSeekCard = memo(function DeepSeekCard({
   balance,
   selectedDate,
   onRefreshed,
@@ -149,7 +151,7 @@ export function DeepSeekCard({
       </div>
     </section>
   );
-}
+});
 
 function BalanceChartSkeleton() {
   return (

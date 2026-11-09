@@ -23,6 +23,13 @@ const ActivityHeatmap = lazy(() =>
   })),
 );
 
+// Static elements keep the memoized StatCard props referentially stable, so
+// a snapshot that changes only some values re-renders only the affected card.
+const INPUT_ICON = <Icon name="arrow-down-left" />;
+const OUTPUT_ICON = <Icon name="arrow-up-right" />;
+const CACHE_ICON = <Icon name="database" />;
+const RANGE_ICON = <Icon name="activity" />;
+
 export function Dashboard({
   data,
   onOpenSettings,
@@ -51,7 +58,7 @@ export function Dashboard({
     : "http://127.0.0.1:11435";
 
   const handleModelsChanged = useCallback(() => {
-    setModelMutationKey((value) => value + 1);
+    setModelMutationKey((v) => v + 1);
     onModelsChanged();
   }, [onModelsChanged]);
 
@@ -62,17 +69,19 @@ export function Dashboard({
     [data.models],
   );
 
-  function handleMonthOffsetChange(nextOffset: number) {
+  // Stable identities so the memoized heatmap skips re-renders when its data
+  // did not change.
+  const handleMonthOffsetChange = useCallback((nextOffset: number) => {
     setMonthOffset(nextOffset);
     setSelectedDate((current) => dateKeyForMonthOffset(current, nextOffset));
-  }
+  }, []);
 
   // Kept separate from month navigation so "Today" always selects today, even
   // when the current selection is already in the current month.
-  function handleGoToToday() {
+  const handleGoToToday = useCallback(() => {
     setMonthOffset(0);
     setSelectedDate(todayKey());
-  }
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -132,14 +141,14 @@ export function Dashboard({
           label="Input today"
           value={formatCompact(data.totals.todayNewInputTokens)}
           hint={`${formatNumber(data.totals.todayRequests)} Requests`}
-          icon={<Icon name="arrow-down-left" />}
+          icon={INPUT_ICON}
           accent="teal"
         />
         <StatCard
           label="Output today"
           value={formatCompact(data.totals.todayOutputTokens)}
           hint="Generated Tokens"
-          icon={<Icon name="arrow-up-right" />}
+          icon={OUTPUT_ICON}
           accent="sky"
           delay={0.05}
         />
@@ -147,7 +156,7 @@ export function Dashboard({
           label="Cache hit rate"
           value={formatPercent(data.totals.cacheHitRate)}
           hint={`Today ${formatPercent(data.totals.todayCacheHitRate)} · token-weighted`}
-          icon={<Icon name="database" />}
+          icon={CACHE_ICON}
           accent="violet"
           delay={0.1}
         />
@@ -157,7 +166,7 @@ export function Dashboard({
           hint={`New in ${formatCompact(
             data.totals.newInputTokens,
           )} · Out ${formatCompact(data.totals.outputTokens)}`}
-          icon={<Icon name="activity" />}
+          icon={RANGE_ICON}
           accent="amber"
           delay={0.15}
         />
@@ -176,7 +185,7 @@ export function Dashboard({
               onSelectDate={setSelectedDate}
               models={data.models}
               modelColors={modelColors}
-              detailRefreshKey={data.revision}
+              detailRefreshKey={data.totals.todayRequests}
               modelMutationKey={modelMutationKey}
             />
           </Suspense>

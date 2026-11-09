@@ -1,5 +1,5 @@
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatCompact, formatNumber, formatPercent } from "../lib/format";
 import { colorForModel, type ModelColor } from "../lib/modelColors";
@@ -7,7 +7,9 @@ import type { ModelUsage } from "../lib/types";
 import { Icon } from "./Icons";
 import { ManageModelsDialog } from "./ManageModelsDialog";
 
-export function ModelBreakdown({
+// Memoized on the `models` and `modelColors` references: the snapshot hook
+// reconciles unchanged slices, so a DeepSeek-only refresh skips this card.
+export const ModelBreakdown = memo(function ModelBreakdown({
   models,
   modelColors,
   onModelsChanged,
@@ -27,14 +29,14 @@ export function ModelBreakdown({
     };
   }, []);
 
-  const showNotice = useCallback((message: string) => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice(message);
-    noticeTimer.current = setTimeout(() => setNotice(null), 5000);
-  }, []);
-
   const maxTokens = Math.max(...models.map((model) => model.totalTokens), 1);
   const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
+
+  const showNotice = useCallback((msg: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(msg);
+    noticeTimer.current = setTimeout(() => setNotice(null), 5000);
+  }, []);
 
   return (
     <section className="card flex h-full min-h-0 flex-col p-5">
@@ -147,4 +149,4 @@ export function ModelBreakdown({
       />
     </section>
   );
-}
+});

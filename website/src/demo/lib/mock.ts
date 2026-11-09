@@ -40,8 +40,8 @@ let mockModelState: MockModel[] = MODEL_NAMES.map((name, index) => ({
 }));
 
 // Monotonic revision for the mock snapshot. It must increase on every call so
-// the core-snapshot revision guard in `useDemoSnapshot` accepts fresh mock
-// payloads (a constant revision would be dropped after the first load).
+// the snapshot revision guard accepts fresh mock payloads (a constant revision
+// would be dropped after the first load).
 let mockRev = 0;
 function mockRevision(): number {
   mockRev += 1;
