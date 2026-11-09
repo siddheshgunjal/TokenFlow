@@ -8,6 +8,9 @@ import {
   mockDayUsageDetail,
   mockDeepSeekStatus,
   mockSettingsView,
+  mockModelCatalog,
+  mockDeleteModelData,
+  mockMergeModels,
 } from "./mock";
 import type {
   BalanceSnapshot,
@@ -15,6 +18,8 @@ import type {
   DayUsageDetail,
   DashboardSummary,
   DeepSeekStatus,
+  ModelCatalogEntry,
+  ModelMutationResult,
   RefreshResult,
   Settings,
   SettingsView,
@@ -164,6 +169,38 @@ export async function getDayUsageDetail(date: string): Promise<DayUsageDetail> {
     return mockDayUsageDetail(date);
   }
   return invoke<DayUsageDetail>("get_day_usage_detail", { date });
+}
+
+export async function getModelCatalog(): Promise<ModelCatalogEntry[]> {
+  if (!isTauri) {
+    await delay(80);
+    return mockModelCatalog();
+  }
+  return invoke<ModelCatalogEntry[]>("get_model_catalog");
+}
+
+export async function deleteModelData(
+  models: string[],
+): Promise<ModelMutationResult> {
+  if (!isTauri) {
+    await delay(180);
+    return mockDeleteModelData(models);
+  }
+  return invoke<ModelMutationResult>("delete_model_data", { models });
+}
+
+export async function mergeModels(
+  sources: string[],
+  targetModel: string,
+): Promise<ModelMutationResult> {
+  if (!isTauri) {
+    await delay(180);
+    return mockMergeModels(sources, targetModel);
+  }
+  return invoke<ModelMutationResult>("merge_models", {
+    sources,
+    targetModel,
+  });
 }
 
 export async function showMainWindow(): Promise<void> {

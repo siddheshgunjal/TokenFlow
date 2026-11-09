@@ -157,6 +157,22 @@ export interface DeepSeekStatus {
   pollIntervalSecs: number;
 }
 
+export interface ModelCatalogEntry {
+  model: string;
+  requestsTotal: number;
+  tokensTotal: number;
+  requestsRecent: number;
+  tokensRecent: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+}
+
+export interface ModelMutationResult {
+  rowsAffected: number;
+  models: string[];
+  target: string | null;
+}
+
 export interface ClearDataResult {
   ollamaLogs: number;
   deepseekBalances: number;
