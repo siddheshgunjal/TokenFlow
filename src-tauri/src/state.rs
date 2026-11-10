@@ -36,6 +36,55 @@ impl RefreshCoordinator {
     }
 }
 
+/// Tracks proxy traffic for the idle re-exec.
+///
+/// The recycle may only run when no request is being forwarded. A guard is
+/// held for the whole lifetime of a proxied request, including its streaming
+/// response, so a long Ollama generation can never be interrupted. The last
+/// activity timestamp is touched on both start and finish, so the idle window
+/// also starts after the final stream ends.
+#[derive(Default)]
+pub struct ProxyActivity {
+    in_flight: AtomicU64,
+    last_activity: AtomicI64,
+}
+
+pub struct ProxyActivityGuard {
+    activity: Arc<ProxyActivity>,
+}
+
+impl ProxyActivity {
+    pub fn begin(self: &Arc<Self>) -> ProxyActivityGuard {
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        self.touch();
+        ProxyActivityGuard {
+            activity: Arc::clone(self),
+        }
+    }
+
+    fn touch(&self) {
+        self.last_activity
+            .store(chrono::Utc::now().timestamp(), Ordering::SeqCst);
+    }
+
+    pub fn in_flight(&self) -> u64 {
+        self.in_flight.load(Ordering::SeqCst)
+    }
+
+    /// Unix timestamp of the last request start or finish; `0` before any
+    /// request has been proxied.
+    pub fn last_activity(&self) -> i64 {
+        self.last_activity.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for ProxyActivityGuard {
+    fn drop(&mut self) {
+        self.activity.in_flight.fetch_sub(1, Ordering::SeqCst);
+        self.activity.touch();
+    }
+}
+
 /// Where the widget should be anchored.
 ///
 /// Windows, macOS, and Linux tray activations all report physical screen
@@ -57,6 +106,9 @@ pub enum TrayAnchor {
 pub struct WindowFlags {
     visible: Arc<AtomicBool>,
     suspended: Arc<AtomicBool>,
+    /// Generation of the outstanding show request; 0 means nothing pending.
+    pending_show: Arc<AtomicU64>,
+    show_generation: Arc<AtomicU64>,
     visible_count: Arc<AtomicU32>,
 }
 
@@ -65,6 +117,8 @@ impl WindowFlags {
         Self {
             visible: Arc::new(AtomicBool::new(false)),
             suspended: Arc::new(AtomicBool::new(false)),
+            pending_show: Arc::new(AtomicU64::new(0)),
+            show_generation: Arc::new(AtomicU64::new(0)),
             visible_count,
         }
     }
@@ -92,6 +146,35 @@ impl WindowFlags {
     pub fn take_suspended(&self) -> bool {
         self.suspended.swap(false, Ordering::SeqCst)
     }
+
+    /// Registers a widget show request whose window must stay hidden until the
+    /// page reports that it has content to paint. Returns the request's
+    /// generation; a fallback timer from an earlier request is superseded.
+    pub fn begin_show(&self) -> u64 {
+        let generation = self.show_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        self.pending_show.store(generation, Ordering::SeqCst);
+        generation
+    }
+
+    /// Drops the outstanding show request (hide, or a window already on screen).
+    pub fn cancel_pending_show(&self) {
+        self.pending_show.store(0, Ordering::SeqCst);
+    }
+
+    /// Consumes the pending show request. Only one path (the frontend
+    /// readiness signal or the timeout fallback) may reveal the window.
+    pub fn take_pending_show(&self) -> bool {
+        self.pending_show.swap(0, Ordering::SeqCst) != 0
+    }
+
+    /// Consumes the pending show request only if it still belongs to
+    /// `generation`, so a fallback timer scheduled for an earlier show cannot
+    /// reveal a newer one before its renderer is ready.
+    pub fn take_pending_show_for(&self, generation: u64) -> bool {
+        self.pending_show
+            .compare_exchange(generation, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
 }
 
 /// Shared state injected into Tauri commands and background workers.
@@ -111,6 +194,11 @@ pub struct AppState {
     /// Number of windows currently shown. The snapshot bridge skips emissions
     /// when every window is hidden.
     pub visible_windows: Arc<AtomicU32>,
+    /// Proxy request accounting for the idle re-exec.
+    pub proxy_activity: Arc<ProxyActivity>,
+    /// Set once any webview has been created in this process. Only then can an
+    /// idle re-exec release meaningful UI-process memory.
+    pub webview_created: Arc<AtomicBool>,
     proxy_status: Arc<RwLock<ProxyStatus>>,
     settings: Arc<RwLock<Settings>>,
     secrets: Arc<RwLock<SecretState>>,
@@ -119,9 +207,6 @@ pub struct AppState {
     /// Serializes on-demand window creation so two simultaneous requests do
     /// not build the same window twice. Used by the window lifecycle module.
     pub window_lock: Arc<Mutex<()>>,
-    /// Bumped on every widget show/hide so a pending eviction task can tell
-    /// whether it is still the current hide generation.
-    widget_hide_generation: Arc<AtomicU64>,
     app: AppHandle,
 }
 
@@ -168,12 +253,13 @@ impl AppState {
             main_window: WindowFlags::new(visible_windows.clone()),
             widget_window: WindowFlags::new(visible_windows.clone()),
             visible_windows,
+            proxy_activity: Arc::new(ProxyActivity::default()),
+            webview_created: Arc::new(AtomicBool::new(false)),
             proxy_status,
             settings: Arc::new(RwLock::new(settings)),
             secrets: Arc::new(RwLock::new(secret_state)),
             tray_anchor: Arc::new(RwLock::new(None)),
             window_lock: Arc::new(Mutex::new(())),
-            widget_hide_generation: Arc::new(AtomicU64::new(0)),
             app: app.clone(),
         })
     }
@@ -243,6 +329,14 @@ impl AppState {
             .clone()
     }
 
+    pub fn mark_webview_created(&self) {
+        self.webview_created.store(true, Ordering::SeqCst);
+    }
+
+    pub fn has_webview(&self) -> bool {
+        self.webview_created.load(Ordering::SeqCst)
+    }
+
     pub fn update_proxy_status(&self, status: ProxyStatus) {
         *self
             .proxy_status
@@ -268,67 +362,35 @@ impl AppState {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+}
 
-    /// Invalidates any pending widget eviction. Called whenever the widget is
-    /// shown so a stale timer can never destroy a visible window.
-    pub fn cancel_widget_eviction(&self) {
-        self.widget_hide_generation.fetch_add(1, Ordering::SeqCst);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn widget_flags() -> WindowFlags {
+        WindowFlags::new(Arc::new(AtomicU32::new(0)))
     }
 
-    /// Schedules suspension of the warm widget once it has been hidden for
-    /// `widget_eviction_secs`. On Linux this kills the widget's web process and
-    /// keeps the (hidden) window for a leak-free reload on the next open; other
-    /// platforms destroy the window. A value of `0` disables eviction.
-    ///
-    /// The hide generation guards against races: showing or re-hiding the
-    /// widget bumps it, so only the latest timer acts.
-    pub fn schedule_widget_eviction(&self) {
-        let seconds = self.settings().widget_eviction_secs;
-        if seconds == 0 {
-            return;
-        }
+    #[test]
+    fn a_newer_show_supersedes_an_earlier_fallback() {
+        let flags = widget_flags();
+        let first = flags.begin_show();
 
-        let generation = self.widget_hide_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let state = self.clone();
-        let flags = self.widget_window.clone();
-        let app = self.app.clone();
+        // The widget is closed and reopened before the first fallback fires.
+        flags.cancel_pending_show();
+        let second = flags.begin_show();
 
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(seconds)).await;
+        assert!(!flags.take_pending_show_for(first));
+        assert!(flags.take_pending_show_for(second));
+    }
 
-            // A newer show/hide superseded this timer.
-            if state.widget_hide_generation.load(Ordering::SeqCst) != generation {
-                return;
-            }
+    #[test]
+    fn readiness_and_fallback_reveal_only_once() {
+        let flags = widget_flags();
+        let generation = flags.begin_show();
 
-            // Do the check and the teardown in one main-thread turn so WebKit
-            // cannot respawn the process between them.
-            let app_for_task = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                let Some(window) = app_for_task.get_webview_window("widget") else {
-                    return;
-                };
-                if window.is_visible().unwrap_or(false) {
-                    return;
-                }
-
-                tracing::debug!(seconds, "suspending the idle widget renderer");
-
-                #[cfg(target_os = "linux")]
-                {
-                    // Kill the renderer but keep the window and webview so the
-                    // next open reloads instead of rebuilding the whole widget
-                    // (which leaks UI-side memory per cycle in wry/Tauri).
-                    crate::windows::terminate_web_process(&window);
-                    flags.set_suspended(true);
-                }
-
-                #[cfg(not(target_os = "linux"))]
-                {
-                    let _ = flags;
-                    let _ = window.destroy();
-                }
-            });
-        });
+        assert!(flags.take_pending_show());
+        assert!(!flags.take_pending_show_for(generation));
     }
 }

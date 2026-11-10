@@ -605,7 +605,7 @@ export const mockSettings: Settings = {
   closeToTray: true,
   widgetAlwaysOnTop: true,
   showWidgetOnStart: false,
-  widgetEvictionSecs: 60,
+  idleRecycleSecs: 60,
   launchAtLogin: false,
 };
 

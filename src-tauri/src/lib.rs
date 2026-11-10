@@ -11,6 +11,7 @@ mod memory_stress;
 mod models;
 mod platform;
 mod proxy;
+mod recycle;
 mod secrets;
 mod settings;
 mod snapshot;
@@ -42,11 +43,17 @@ pub fn run() {
         .compact()
         .init();
 
+    // A recycled image inherits the old WebKitNetworkProcess as a child; reap
+    // it before Tauri/GTK starts WebKit's own child processes.
+    if startup::is_recycled_launch() {
+        recycle::reap_inherited_children();
+    }
+
     tauri::Builder::default()
         // The single-instance plugin must be registered before every other
         // plugin so a second launch exits before any worker or tray starts.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if startup::has_autostart_arg(&argv) {
+            if startup::has_autostart_arg(&argv) || startup::has_recycled_arg(&argv) {
                 return;
             }
 
@@ -81,11 +88,14 @@ pub fn run() {
             heap_stats::spawn_reporter();
 
             let settings = state.settings();
-            if startup::is_autostart_launch() {
-                // An autostart launch creates no windows at all. The core, tray,
-                // and proxy run headless; the user opens the dashboard or
-                // widget explicitly from the tray.
-                tracing::debug!("started by the login item; no windows created");
+            if startup::is_autostart_launch() || startup::is_recycled_launch() {
+                // An autostart or recycled launch creates no windows at all. The
+                // core, tray, and proxy run headless; the user opens the
+                // dashboard or widget explicitly from the tray.
+                tracing::debug!(
+                    recycled = startup::is_recycled_launch(),
+                    "starting headless; no windows created"
+                );
             } else {
                 // Manual launch: create and show the dashboard unless the user
                 // prefers to start minimized.
@@ -100,6 +110,7 @@ pub fn run() {
 
             proxy::spawn(state.clone());
             deepseek::spawn_worker(state.clone());
+            recycle::spawn(handle.clone(), state.clone());
 
             Ok(())
         })
@@ -164,6 +175,7 @@ pub fn run() {
             commands::get_proxy_status,
             commands::show_main_window,
             commands::toggle_widget,
+            commands::widget_ready,
             commands::quit_app,
         ])
         .build(tauri::generate_context!())

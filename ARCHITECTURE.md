@@ -57,7 +57,7 @@ The core owns all data collection and querying; the UI is a pure renderer. The o
 
 - **Desktop shell**: Tauri 2 with two-action native tray menu on Windows/macOS, icon-only StatusNotifierItem on Linux, and two windows (`main` dashboard, `widget` panel) that are created on demand and never at autostart. On Linux a window is created once and reused (hide, kill its renderer, reload on reveal); see [Window and renderer lifecycle](#window-and-renderer-lifecycle).
 - **Snapshot service**: `snapshot.rs` — the single core-owned rebuild path. Owns the only `Db::snapshot()` call, a cached `Arc<DashboardSummary>`, a monotonic `revision`, and a `Notify`-driven scheduler with 400ms debounce and a 60s day-rollover heartbeat. No Tauri types inside the service; `spawn_bridge` is the only Tauri-facing code.
-- **Memory hygiene**: `memory.rs` — a 15-minute idle tick that clears the WebKit resource cache and releases glibc free pages, but only while every window is hidden. `heap_stats.rs` (cargo feature `heap-stats`) — optional counting allocator that logs core heap counters every 60s.
+- **Memory hygiene**: `memory.rs` — a 15-minute idle tick that clears the WebKit resource cache and releases glibc free pages, but only while every window is hidden. `recycle.rs` — Linux-only idle re-exec that returns the core to its pre-webview footprint after `idle_recycle_secs` (default 60). `heap_stats.rs` (cargo feature `heap-stats`) — optional counting allocator that logs core heap counters every 60s.
 - **Refresh coordinator**: `RefreshCoordinator` in `state.rs` — an async `Mutex` plus a `last_refresh_at` atomic. Both the DeepSeek worker and `refresh_core` acquire it, so double-clicks and two open windows produce one network call, not two.
 - **Proxy**: Axum 0.7 running on loopback only, with hop-by-hop header filtering and a 64 MiB request body cap.
 - **Stream parser**: Buffered NDJSON + SSE parser that handles input/output/cached token split, flushes complete lines only, and deduplicates by request ID.
@@ -98,15 +98,18 @@ platform because WebKitGTK's webview teardown is unreliable; see the
 |---|---|---|
 | Close dashboard (`close_to_tray`) | hide, `terminate_web_process`, mark suspended; window and webview kept | destroy the window |
 | Reopen dashboard | `load_uri(last_uri)` (fallback `reload()`), then show/focus | create a new window |
-| Hide widget | hide; start the `widget_eviction_secs` timer | hide; start the timer |
-| Widget idle past `widget_eviction_secs` | kill its renderer, keep the window | destroy the window |
-| Reopen suspended widget | reload, show, emit `widget-shown` | create a new window, emit `widget-shown` |
+| Hide widget | hide, `terminate_web_process` immediately; window and webview kept | hide, destroy the window |
+| Reopen suspended widget | reload while hidden, show when the page reports `widget_ready`, emit `widget-shown` | create a new window, show when the page reports `widget_ready`, emit `widget-shown` |
 | Every window hidden | snapshot bridge skips `core-snapshot` emissions | same |
 | Window minimized | snapshot bridge skips that window; it re-syncs on focus | same |
+| Every window hidden and proxy quiet past `idle_recycle_secs` (default 60 s) | re-exec headless (`--recycled`), releasing the UI-process library working set | no-op (windows are destroyed on close) |
 
-`widget_eviction_secs = 0` disables suspension and keeps the widget warm. This
-is an internal/advanced setting (default 60); it is deliberately not exposed in
-the Settings UI because it only tunes renderer memory, not product behavior.
+`idle_recycle_secs = 0` disables the Linux idle core recycle; hidden widget
+renderers are still torn down immediately. This is an internal/advanced setting
+(default 60); it is deliberately not exposed in the Settings UI because it only
+tunes renderer/core memory, not product behavior.
+
+**Widget reveal is readiness-gated.** A reopened widget is never mapped while its fresh renderer is still blank. The page reloads (Linux) or is recreated (Windows/macOS) while the window is hidden, the widget calls the `widget_ready` command after its first snapshot is rendered, and only then does the core show, position, and focus the window. A 2000 ms fallback reveals the loading/error state if the page never reports. This removes the close/reopen flash without keeping a renderer warm; `idle_recycle_secs` still releases the core's UI-process library working set after the window has been hidden.
 
 **Why Linux never destroys webviews.** wry 0.57 attaches its IPC handler with a
 closure that captures the `WebView` strongly while the handler is stored on the
@@ -117,10 +120,29 @@ after the process was killed explicitly, still leaked ~1 MB of UI-process
 memory. Creating one webview per role and only terminating its renderer avoids
 both leaks.
 
-`WebKitNetworkProcess` (~40 MB) remains resident after the first window opens.
-Tauri deliberately keeps the WebKit `WebContext` alive on Linux because WebKit
-does not close the network process on its own, and Tauri exposes no API to drop
-it. It is the steady-state floor, not a leak; do not force-kill it.
+`WebKitNetworkProcess` (~57 MB on the GNOME 51 runtime) remains resident after
+the first window opens. Tauri deliberately keeps the WebKit `WebContext` alive
+on Linux because WebKit does not close the network process on its own, and
+Tauri exposes no API to drop it. It is the steady-state floor, not a leak; do
+not force-kill it.
+
+**Why an idle re-exec is needed.** Opening the first webview permanently loads
+roughly 90 MB of GTK, WebKitGTK, JavaScriptCore, and Mesa (`libgallium` +
+`libLLVM`) library pages into the *core* process, which is also the UI process
+on Linux. Closing a window releases only its renderer; those library pages
+cannot be unloaded from a live process, and `WEBKIT_DISABLE_COMPOSITING_MODE`,
+`GDK_GL=disable`, DMABUF switches, native Wayland, and allocator tuning were
+all measured and none removed them. `recycle.rs` therefore waits until every
+window has been hidden **and** no proxied request is in flight for
+`idle_recycle_secs` (default 60; `0` disables). Widget renderers are already torn
+down immediately on hide, so this window is purely the core's UI-process
+working set. It then flushes the WAL, releases the single-instance D-Bus name,
+and `exec`s the same binary with `--recycled`. The
+replacement starts headless (no window, no `WebKitNetworkProcess`), re-binds
+the proxy and tray, and returns to the pre-webview footprint. Measured on the
+GNOME 51 runtime: **167 MB while a warm UI process exists vs 75 MB after the
+re-exec**, with a 5 ms proxy rebind. Windows and macOS destroy webviews per
+close, so the re-exec is Linux-only.
 
 ## Request and data flow
 
@@ -190,7 +212,7 @@ Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique inde
 
 17. **Single-flight refresh coordinator** — `RefreshCoordinator` (async `Mutex` + `last_refresh_at`) is acquired by both the DeepSeek worker and `refresh_core`. A manual refresh performs at most one network call and skips if a refresh landed within the last 2s, so double-clicks and two open windows produce one DeepSeek request. `refresh_core` always returns a valid `RefreshResult` with any DeepSeek failure surfaced as a non-fatal `deepseekError`.
 
-18. **Lazy windows: Linux suspends renderers; other platforms destroy windows** — Both windows are declared with `"create": false` in `tauri.conf.json`. `windows.rs::ensure_window` creates a window on demand from its config (serialized by `window_lock`), so no webview exists until a window is first opened. On Linux, once created, a window and its webview are kept for the app's lifetime: closing the dashboard hides it and calls `WebViewExt::terminate_web_process` to release its ~100 MB renderer, and the next open reloads the page. The hidden widget's renderer is suspended after `widget_eviction_secs` (0 disables). Keeping the windows avoids wry 0.57's IPC-handler reference cycle (a closure capturing the `WebView` strongly that is stored on the webview's own `UserContentManager`), which otherwise prevents the `WebView` GObject from finalizing and leaks UI-side memory on every open/close cycle. Windows and macOS still destroy the windows on close and recreate them on demand. The snapshot bridge skips emissions while every window is hidden and skips an individual window that is minimized (it cannot paint; the hook re-syncs on focus), so refresh traffic never parses and buffers snapshots into a renderer that is not on screen. On macOS, `ExitRequested { code: None }` is prevented so the core and tray survive the last window; `Reopen` recreates the dashboard. An explicit quit (`exit(0)` → `code: Some`) is allowed through. Full investigation: [docs/perf/webkit-memory-research.md](docs/perf/webkit-memory-research.md).
+18. **Lazy windows: Linux suspends renderers; other platforms destroy windows** — Both windows are declared with `"create": false` in `tauri.conf.json`. `windows.rs::ensure_window` creates a window on demand from its config (serialized by `window_lock`), so no webview exists until a window is first opened. On Linux, once created, a window and its webview are kept for the app's lifetime: closing the dashboard hides it and calls `WebViewExt::terminate_web_process` to release its ~100 MB renderer, and the next open reloads the page. Hiding the widget suspends its renderer immediately (the hidden window and webview shell are kept for a leak-free reload). Keeping the windows avoids wry 0.57's IPC-handler reference cycle (a closure capturing the `WebView` strongly that is stored on the webview's own `UserContentManager`), which otherwise prevents the `WebView` GObject from finalizing and leaks UI-side memory on every open/close cycle. Windows and macOS still destroy the windows on close and recreate them on demand. The snapshot bridge skips emissions while every window is hidden and skips an individual window that is minimized (it cannot paint; the hook re-syncs on focus), so refresh traffic never parses and buffers snapshots into a renderer that is not on screen. On macOS, `ExitRequested { code: None }` is prevented so the core and tray survive the last window; `Reopen` recreates the dashboard. An explicit quit (`exit(0)` → `code: Some`) is allowed through. Full investigation: [docs/perf/webkit-memory-research.md](docs/perf/webkit-memory-research.md).
 
 19. **Autostart creates zero webviews** — A login launch (`--autostart`) starts the core, tray, proxy, and DeepSeek worker with no windows. A manual launch creates and shows the dashboard unless `startMinimized`, and shows the widget only if `showWidgetOnStart` (the one intentional background webview). The tray and proxy stay alive in both cases.
 
@@ -201,6 +223,8 @@ Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique inde
 22. **Idle memory hygiene** — `memory.rs` runs a 15-minute idle tick that only acts when every window is hidden (the same gate the snapshot bridge uses). It clears the WebKit `WebContext` resource cache (`WebContextExt::clear_cache`) and, on glibc Linux, calls `malloc_trim(0)` to return freed allocator pages to the OS. Linux keeps the window shells and webviews alive for the app's lifetime, so the UI process's resource caches have no natural teardown point; the tick bounds them without ever disturbing a visible window. `malloc_trim` removes glibc's RSS high-water mark left behind by transient IPC/JSON spikes. The WebKit part is a no-op on Windows/macOS, where windows and their caches are destroyed on close.
 
 23. **Optional heap accounting** — the `heap-stats` cargo feature installs a counting global allocator (`heap_stats.rs`) that tracks live bytes, peak bytes, and allocation calls, and logs them every 60s at debug level. It separates "the core's own heap grew" from "GTK/WebKit retained something" during long captures. It is off by default because it adds two atomic operations to every allocation; enable with `cargo run --features heap-stats` and `RUST_LOG=tokenflow=debug`.
+
+24. **Idle core recycle on Linux** — `recycle.rs` re-execs the process when every window has been hidden and the proxy has been quiet for `idle_recycle_secs` (default 60; `0` disables). Widget renderers are torn down immediately on hide, so this window only covers the core's UI-process library working set. This is the only supported way to release the GTK/WebKit/Mesa library working set that the first webview loads into the core process. The decision is gated on `webview_created`, `visible_windows == 0`, `proxy_activity.in_flight() == 0`, and the quiet window; `ProxyActivityGuard` is held for the whole streamed response, so a long Ollama generation can never be cut. The replacement is started with `--recycled` so it skips window creation, and `reap_inherited_children()` clears the pre-exec `WebKitNetworkProcess` before the new image starts WebKit children. `exec` (rather than spawn-and-exit) preserves the Flatpak sandbox and PID, and the proxy rebinds immediately. The WAL is checkpointed before the exec. The teardown and exec run on a plain OS thread, not the Tokio worker: `tauri_plugin_single_instance::destroy` releases the D-Bus name through a blocking zbus connection, which panics with "Cannot start a runtime from within a runtime" when invoked from a Tokio worker.
 
 ## Technology stack
 
@@ -230,9 +254,9 @@ The repository structure has been reorganized per the documentation standardizat
 - TokenFlow does not estimate tokens.
 - Errored requests and interrupted streams are not counted.
 - Duplicate suppression uses `request_id`.
-- The warm widget keeps one renderer alive while hidden until `widgetEvictionSecs` elapses (default 60); on Linux the renderer is then killed (the hidden window is kept) and the next open reloads, while Windows/macOS destroy the window. This is an internal setting, not shown in the Settings UI; `0` keeps the widget warm indefinitely.
+- Hidden widgets are torn down immediately: Linux kills the renderer and keeps the hidden window/webview shell for a leak-free reload, while Windows/macOS destroy the window. The core recycle releases the UI-process library working set after `idle_recycle_secs` (default 60). Keeping the shell on Linux avoids wry's GObject-cycle leak; the shell disappears when the core re-execs.
 - On Linux, the dashboard and widget windows are created once and kept hidden between uses; only their renderer processes are released. This sidesteps wry's IPC reference cycle, so idle RSS stays flat instead of growing per open/close. The trade-off is a small fixed UI-side shell per window and a page reload on reopen.
-- `WebKitNetworkProcess` is a deliberate resident. Tauri keeps the WebKit `WebContext` alive for the app's lifetime on Linux because WebKit does not close the network process when no webviews are running; the alternative (dropping the context) is not exposed by Tauri's API. Its cost (~40 MB) is the steady-state floor after the first window has ever opened, and the plan's gate (≤120 MB) still holds. Do not force-kill it: WebKit would only respawn it on the next window and treats external termination as a crash.
+- `WebKitNetworkProcess` is a deliberate resident while a webview exists. Tauri keeps the WebKit `WebContext` alive for the app's lifetime on Linux because WebKit does not close the network process when no webviews are running; the alternative (dropping the context) is not exposed by Tauri's API. Its cost (~57 MB on the GNOME 51 runtime) plus the UI process's ~90 MB of WebKit/Mesa library pages means a process that has opened a window sits at ~160 MB, not the cold-core ~60–75 MB. The idle re-exec in `recycle.rs` returns to the cold-core footprint after `idle_recycle_secs` (default 60) with no window and no proxy traffic; the ≤120 MB gate applies to that post-recycle state, not to a process that still has a warm UI. Do not force-kill the network process: WebKit would only respawn it on the next window and treats external termination as a crash.
 - Deferred items: single-click GNOME tray activation, DeepSeek balance overlay, token estimation, proxy auth token, auto-updater/signing, retention/export, recorded-stream integration tests, cost estimation.
 - Follow-ups: parser fixtures, cross-platform tray verification, keychain verification on macOS/Windows/GNOME/KDE, transparent-panel verification, export/backup path.
 

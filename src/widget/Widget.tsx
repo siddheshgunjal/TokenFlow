@@ -1,8 +1,13 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { Icon } from "../components/Icons";
 import { Logo } from "../components/Logo";
-import { quitApp, showMainWindow, toggleWidget } from "../lib/api";
+import {
+  markWidgetReady,
+  quitApp,
+  showMainWindow,
+  toggleWidget,
+} from "../lib/api";
 import {
   formatCompact,
   formatMoney,
@@ -15,6 +20,16 @@ import { useCoreSnapshot } from "../lib/useCoreSnapshot";
 
 export function Widget() {
   const { snapshot: data, refreshing, refresh } = useCoreSnapshot();
+  const readySent = useRef(false);
+
+  // The core keeps the widget window hidden after a reopen/reload. Report
+  // readiness once the first snapshot is rendered so it can be mapped with
+  // content instead of a blank/stale frame.
+  useEffect(() => {
+    if (!data || readySent.current) return;
+    readySent.current = true;
+    void markWidgetReady().catch(() => undefined);
+  }, [data]);
 
   const handleManualRefresh = useCallback(() => {
     void refresh();

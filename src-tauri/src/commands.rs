@@ -369,68 +369,128 @@ pub fn quit_app(app: AppHandle) {
 
 /// Shared by the tray menu and the `toggle_widget` command.
 ///
-/// The widget is created on first open and kept warm for
-/// `widget_eviction_secs` after hiding; once that window elapses the webview is
-/// destroyed to reclaim memory, and the next open cold-starts and fetches the
-/// core snapshot.
+/// The widget is created on first open. Hiding it tears down its renderer
+/// immediately: Linux keeps the hidden window/webview shell (reloading on the
+/// next open) to avoid wry's GObject-cycle leak, while Windows and macOS
+/// destroy the window.
+///
+/// A reopen never maps the window immediately. The shell reloads while hidden
+/// and the frontend calls `widget_ready` after the first snapshot is rendered;
+/// only then does the window appear. A 2000 ms fallback reveals the loading or
+/// error state if the signal never arrives.
 pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bool, String> {
-    // Invalidate any pending eviction before touching the window so a timer
-    // cannot destroy a window we are about to show or have just rebuilt.
-    if let Some(state) = app.try_state::<AppState>() {
-        state.cancel_widget_eviction();
-    }
-
     let window = crate::windows::ensure_window(app, "widget")?;
     let target = match visible {
         Some(value) => value,
         None => !window.is_visible().unwrap_or(false),
     };
+    let state = app.state::<AppState>();
 
     if target {
-        let state = app.state::<AppState>();
         let always_on_top = state.settings().widget_always_on_top;
         if let Err(err) = window.set_always_on_top(always_on_top) {
             tracing::warn!(%err, "could not set widget always-on-top");
         }
 
-        // Position before showing to avoid a flash at the OS default location,
-        // then position again after the window is mapped so the tray anchor is
-        // honored on every platform.
-        position_widget(&window, state.inner());
+        if window.is_visible().unwrap_or(false) {
+            // Already on screen; just re-anchor and focus it.
+            state.widget_window.cancel_pending_show();
+            reveal_widget(&window, state.inner())?;
+            return Ok(true);
+        }
 
-        // On Linux the window is kept after hiding; reload the page when its
-        // renderer was suspended by the eviction timer.
+        // Count the window as requested while it loads so the idle recycle
+        // cannot replace the core before it is mapped. The hidden window is
+        // skipped by the snapshot bridge until it is actually visible.
+        state.widget_window.set_visible(true);
+        let show_generation = state.widget_window.begin_show();
+
         #[cfg(target_os = "linux")]
         if state.widget_window.take_suspended() {
             crate::windows::reload_window(&window);
         }
 
-        window.show().map_err(|err| err.to_string())?;
-        position_widget(&window, state.inner());
-        state.widget_window.set_visible(true);
-
-        // The hook buffers updates while hidden; `widget-shown` tells it to
-        // flush the buffer and sync so a reveal is instant and current.
-        if let Err(err) = app.emit("widget-shown", ()) {
-            tracing::warn!(%err, "could not emit widget-shown");
-        }
+        schedule_widget_show_fallback(app.clone(), state.inner().clone(), show_generation);
     } else {
+        state.widget_window.cancel_pending_show();
         window.hide().map_err(|err| err.to_string())?;
-        if let Some(state) = app.try_state::<AppState>() {
-            state.widget_window.set_visible(false);
-        }
+        state.widget_window.set_visible(false);
         if let Err(err) = app.emit("widget-hidden", ()) {
             tracing::warn!(%err, "could not emit widget-hidden");
         }
 
-        // Start the idle timer that suspends/kills the warm renderer after
-        // `widget_eviction_secs` (no-op when the setting is 0).
-        if let Some(state) = app.try_state::<AppState>() {
-            state.schedule_widget_eviction();
+        #[cfg(target_os = "linux")]
+        {
+            // Kill the renderer now instead of keeping a warm widget. The
+            // hidden window and webview shell remain for a leak-free reload;
+            // the core recycle releases the UI-process working set later.
+            crate::windows::terminate_web_process(&window);
+            state.widget_window.set_suspended(true);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = window.destroy();
         }
     }
 
     Ok(target)
+}
+
+/// Called by the widget frontend once its first snapshot is rendered.
+///
+/// The window stays hidden until this signal so the user never sees the blank
+/// frame produced by a fresh `WebKitWebProcess`/WebView2 load.
+#[tauri::command]
+pub fn widget_ready(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if window.label() != "widget" {
+        return Ok(());
+    }
+    if !state.widget_window.take_pending_show() {
+        return Ok(());
+    }
+    tracing::debug!("widget reported ready; revealing");
+    reveal_widget(&window, state.inner())
+}
+
+/// Maps and focuses the widget at the tray anchor.
+fn reveal_widget(window: &tauri::WebviewWindow, state: &AppState) -> Result<(), String> {
+    position_widget(window, state);
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    position_widget(window, state);
+    state.widget_window.set_visible(true);
+
+    // The hook buffers updates while hidden; `widget-shown` tells it to flush
+    // the buffer and sync so the reveal is current.
+    if let Err(err) = window.app_handle().emit("widget-shown", ()) {
+        tracing::warn!(%err, "could not emit widget-shown");
+    }
+    Ok(())
+}
+
+/// Safety net for a missing `widget_ready` signal (page error or IPC failure).
+fn schedule_widget_show_fallback(app: AppHandle, state: AppState, generation: u64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+
+        let app_for_task = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if !state.widget_window.take_pending_show_for(generation) {
+                return;
+            }
+            let Some(window) = app_for_task.get_webview_window("widget") else {
+                return;
+            };
+            tracing::debug!("widget readiness timed out; revealing");
+            if let Err(err) = reveal_widget(&window, &state) {
+                tracing::warn!(%err, "could not reveal widget after readiness timeout");
+            }
+        });
+    });
 }
 
 /// Widget size from `tauri.conf.json`. `outer_size()` returns zero until the

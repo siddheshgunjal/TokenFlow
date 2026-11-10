@@ -277,6 +277,17 @@ impl Db {
 
     /// Periodic storage maintenance run by the DeepSeek poll worker.
     ///
+    /// Best-effort WAL flush before the idle re-exec replaces the process.
+    ///
+    /// `exec` skips destructors, so this is the last chance to fold the WAL
+    /// back into the main database cleanly.
+    pub fn checkpoint(&self) {
+        let conn = self.lock();
+        if let Err(err) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+            tracing::debug!(%err, "WAL checkpoint before idle recycle failed");
+        }
+    }
+
     /// Deletes balance samples older than [`BALANCE_RETENTION_SECS`] and
     /// truncates the WAL. Both are best-effort: a busy checkpoint is retried
     /// on the next poll, and the pruned row count is returned for logging.

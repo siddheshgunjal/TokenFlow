@@ -234,7 +234,12 @@ mod linux {
                 tracing::warn!(%err, "could not open the widget from the tray");
             }
             if let Some(widget) = task_app.get_webview_window("widget") {
-                let _ = widget.set_focus();
+                // Do not focus a hidden widget: reveal_widget focuses it once
+                // the frontend reports readiness. Focusing here can map the
+                // window before the page has content and cause a flash.
+                if widget.is_visible().unwrap_or(false) {
+                    let _ = widget.set_focus();
+                }
             }
         });
     }

@@ -95,6 +95,7 @@ pub fn ensure_window(app: &AppHandle, label: &str) -> Result<WebviewWindow, Stri
         .build()
         .map_err(|err| err.to_string())?;
 
+    state.mark_webview_created();
     tracing::debug!(label, "created window on demand");
 
     // Apply the always-on-top setting to the widget at creation time so the
