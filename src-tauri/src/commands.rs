@@ -394,7 +394,7 @@ pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bo
 
         if window.is_visible().unwrap_or(false) {
             // Already on screen; just re-anchor and focus it.
-            state.widget_window.set_pending_show(false);
+            state.widget_window.cancel_pending_show();
             reveal_widget(&window, state.inner())?;
             return Ok(true);
         }
@@ -403,16 +403,16 @@ pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bo
         // cannot replace the core before it is mapped. The hidden window is
         // skipped by the snapshot bridge until it is actually visible.
         state.widget_window.set_visible(true);
-        state.widget_window.set_pending_show(true);
+        let show_generation = state.widget_window.begin_show();
 
         #[cfg(target_os = "linux")]
         if state.widget_window.take_suspended() {
             crate::windows::reload_window(&window);
         }
 
-        schedule_widget_show_fallback(app.clone(), state.inner().clone());
+        schedule_widget_show_fallback(app.clone(), state.inner().clone(), show_generation);
     } else {
-        state.widget_window.set_pending_show(false);
+        state.widget_window.cancel_pending_show();
         window.hide().map_err(|err| err.to_string())?;
         state.widget_window.set_visible(false);
         if let Err(err) = app.emit("widget-hidden", ()) {
@@ -473,13 +473,13 @@ fn reveal_widget(window: &tauri::WebviewWindow, state: &AppState) -> Result<(), 
 }
 
 /// Safety net for a missing `widget_ready` signal (page error or IPC failure).
-fn schedule_widget_show_fallback(app: AppHandle, state: AppState) {
+fn schedule_widget_show_fallback(app: AppHandle, state: AppState, generation: u64) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
 
         let app_for_task = app.clone();
         let _ = app.run_on_main_thread(move || {
-            if !state.widget_window.take_pending_show() {
+            if !state.widget_window.take_pending_show_for(generation) {
                 return;
             }
             let Some(window) = app_for_task.get_webview_window("widget") else {

@@ -106,7 +106,9 @@ pub enum TrayAnchor {
 pub struct WindowFlags {
     visible: Arc<AtomicBool>,
     suspended: Arc<AtomicBool>,
-    pending_show: Arc<AtomicBool>,
+    /// Generation of the outstanding show request; 0 means nothing pending.
+    pending_show: Arc<AtomicU64>,
+    show_generation: Arc<AtomicU64>,
     visible_count: Arc<AtomicU32>,
 }
 
@@ -115,7 +117,8 @@ impl WindowFlags {
         Self {
             visible: Arc::new(AtomicBool::new(false)),
             suspended: Arc::new(AtomicBool::new(false)),
-            pending_show: Arc::new(AtomicBool::new(false)),
+            pending_show: Arc::new(AtomicU64::new(0)),
+            show_generation: Arc::new(AtomicU64::new(0)),
             visible_count,
         }
     }
@@ -144,16 +147,33 @@ impl WindowFlags {
         self.suspended.swap(false, Ordering::SeqCst)
     }
 
-    /// Marks a widget show request whose window must stay hidden until the
-    /// page reports that it has content to paint.
-    pub fn set_pending_show(&self, pending: bool) {
-        self.pending_show.store(pending, Ordering::SeqCst);
+    /// Registers a widget show request whose window must stay hidden until the
+    /// page reports that it has content to paint. Returns the request's
+    /// generation; a fallback timer from an earlier request is superseded.
+    pub fn begin_show(&self) -> u64 {
+        let generation = self.show_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        self.pending_show.store(generation, Ordering::SeqCst);
+        generation
+    }
+
+    /// Drops the outstanding show request (hide, or a window already on screen).
+    pub fn cancel_pending_show(&self) {
+        self.pending_show.store(0, Ordering::SeqCst);
     }
 
     /// Consumes the pending show request. Only one path (the frontend
     /// readiness signal or the timeout fallback) may reveal the window.
     pub fn take_pending_show(&self) -> bool {
-        self.pending_show.swap(false, Ordering::SeqCst)
+        self.pending_show.swap(0, Ordering::SeqCst) != 0
+    }
+
+    /// Consumes the pending show request only if it still belongs to
+    /// `generation`, so a fallback timer scheduled for an earlier show cannot
+    /// reveal a newer one before its renderer is ready.
+    pub fn take_pending_show_for(&self, generation: u64) -> bool {
+        self.pending_show
+            .compare_exchange(generation, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
     }
 }
 
@@ -341,5 +361,36 @@ impl AppState {
             .tray_anchor
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn widget_flags() -> WindowFlags {
+        WindowFlags::new(Arc::new(AtomicU32::new(0)))
+    }
+
+    #[test]
+    fn a_newer_show_supersedes_an_earlier_fallback() {
+        let flags = widget_flags();
+        let first = flags.begin_show();
+
+        // The widget is closed and reopened before the first fallback fires.
+        flags.cancel_pending_show();
+        let second = flags.begin_show();
+
+        assert!(!flags.take_pending_show_for(first));
+        assert!(flags.take_pending_show_for(second));
+    }
+
+    #[test]
+    fn readiness_and_fallback_reveal_only_once() {
+        let flags = widget_flags();
+        let generation = flags.begin_show();
+
+        assert!(flags.take_pending_show());
+        assert!(!flags.take_pending_show_for(generation));
     }
 }
