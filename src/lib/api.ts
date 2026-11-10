@@ -213,6 +213,16 @@ export async function toggleWidget(visible?: boolean): Promise<boolean> {
   return invoke<boolean>("toggle_widget", { visible });
 }
 
+/**
+ * Tells the core that the widget page has rendered its first snapshot. The
+ * core keeps the window hidden until this signal so a fresh webview is never
+ * mapped with a blank frame.
+ */
+export async function markWidgetReady(): Promise<void> {
+  if (!isTauri) return;
+  await invoke("widget_ready");
+}
+
 export async function quitApp(): Promise<void> {
   if (!isTauri) return;
   await invoke("quit_app");

@@ -106,6 +106,7 @@ pub enum TrayAnchor {
 pub struct WindowFlags {
     visible: Arc<AtomicBool>,
     suspended: Arc<AtomicBool>,
+    pending_show: Arc<AtomicBool>,
     visible_count: Arc<AtomicU32>,
 }
 
@@ -114,6 +115,7 @@ impl WindowFlags {
         Self {
             visible: Arc::new(AtomicBool::new(false)),
             suspended: Arc::new(AtomicBool::new(false)),
+            pending_show: Arc::new(AtomicBool::new(false)),
             visible_count,
         }
     }
@@ -140,6 +142,18 @@ impl WindowFlags {
     /// Clears the suspended flag and reports whether the window needs a reload.
     pub fn take_suspended(&self) -> bool {
         self.suspended.swap(false, Ordering::SeqCst)
+    }
+
+    /// Marks a widget show request whose window must stay hidden until the
+    /// page reports that it has content to paint.
+    pub fn set_pending_show(&self, pending: bool) {
+        self.pending_show.store(pending, Ordering::SeqCst);
+    }
+
+    /// Consumes the pending show request. Only one path (the frontend
+    /// readiness signal or the timeout fallback) may reveal the window.
+    pub fn take_pending_show(&self) -> bool {
+        self.pending_show.swap(false, Ordering::SeqCst)
     }
 }
 

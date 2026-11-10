@@ -175,6 +175,7 @@ pub fn run() {
             commands::get_proxy_status,
             commands::show_main_window,
             commands::toggle_widget,
+            commands::widget_ready,
             commands::quit_app,
         ])
         .build(tauri::generate_context!())

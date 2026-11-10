@@ -99,7 +99,7 @@ platform because WebKitGTK's webview teardown is unreliable; see the
 | Close dashboard (`close_to_tray`) | hide, `terminate_web_process`, mark suspended; window and webview kept | destroy the window |
 | Reopen dashboard | `load_uri(last_uri)` (fallback `reload()`), then show/focus | create a new window |
 | Hide widget | hide, `terminate_web_process` immediately; window and webview kept | hide, destroy the window |
-| Reopen suspended widget | reload, show, emit `widget-shown` | create a new window, emit `widget-shown` |
+| Reopen suspended widget | reload while hidden, show when the page reports `widget_ready`, emit `widget-shown` | create a new window, show when the page reports `widget_ready`, emit `widget-shown` |
 | Every window hidden | snapshot bridge skips `core-snapshot` emissions | same |
 | Window minimized | snapshot bridge skips that window; it re-syncs on focus | same |
 | Every window hidden and proxy quiet past `idle_recycle_secs` (default 60 s) | re-exec headless (`--recycled`), releasing the UI-process library working set | no-op (windows are destroyed on close) |
@@ -108,6 +108,8 @@ platform because WebKitGTK's webview teardown is unreliable; see the
 renderers are still torn down immediately. This is an internal/advanced setting
 (default 60); it is deliberately not exposed in the Settings UI because it only
 tunes renderer/core memory, not product behavior.
+
+**Widget reveal is readiness-gated.** A reopened widget is never mapped while its fresh renderer is still blank. The page reloads (Linux) or is recreated (Windows/macOS) while the window is hidden, the widget calls the `widget_ready` command after its first snapshot is rendered, and only then does the core show, position, and focus the window. A 2000 ms fallback reveals the loading/error state if the page never reports. This removes the close/reopen flash without keeping a renderer warm; `idle_recycle_secs` still releases the core's UI-process library working set after the window has been hidden.
 
 **Why Linux never destroys webviews.** wry 0.57 attaches its IPC handler with a
 closure that captures the `WebView` strongly while the handler is stored on the
