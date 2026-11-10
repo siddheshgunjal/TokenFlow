@@ -85,6 +85,7 @@ export function Landing() {
         <Hero />
         <DemoSection />
         <FeatureSection />
+        <GettingStarted />
         <MemorySection />
         <HowItWorks />
         <DownloadSection />
@@ -117,6 +118,12 @@ function SiteHeader() {
         <nav className="hidden items-center gap-4 justify-self-center text-sm text-muted md:flex lg:gap-6">
           <a href="#features" className="transition-colors hover:text-ink">
             Features
+          </a>
+          <a
+            href="#getting-started"
+            className="transition-colors hover:text-ink"
+          >
+            Getting Started
           </a>
           <a href="#memory" className="transition-colors hover:text-ink">
             Memory
@@ -151,6 +158,75 @@ function SiteHeader() {
         </div>
       </div>
     </header>
+  );
+}
+
+function GettingStarted() {
+  const steps = [
+    {
+      title: "Run Ollama",
+      description: "Ensure Ollama is running on `127.0.0.1:11434`.",
+      code: "127.0.0.1:11434",
+    },
+    {
+      title: "Launch TokenFlow",
+      description:
+        "Launch TokenFlow and it will automatically proxy requests on `127.0.0.1:11435`.",
+      code: "127.0.0.1:11435",
+    },
+    {
+      title: "Configure clients",
+      description:
+        "Point your Ollama clients at `http://127.0.0.1:11435` (native) or `/v1` (OpenAI-compatible).",
+      code: "http://127.0.0.1:11435/v1",
+    },
+    {
+      title: "Send requests",
+      description:
+        "Send completion requests - token counts appear in the dashboard after each stream.",
+    },
+  ];
+
+  return (
+    <section
+      id="getting-started"
+      className="scroll-mt-20 border-t border-white/[0.06] py-12 sm:py-16"
+    >
+      <div className="mx-auto max-w-5xl px-5 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-base font-semibold uppercase tracking-[0.18em] text-accent">
+            Getting Started
+          </p>
+          <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            Setup in seconds.
+          </h2>
+        </div>
+
+        <div className="mt-8 grid gap-4 lg:grid-cols-4">
+          {steps.map((step, index) => (
+            <div
+              key={step.title}
+              className="card flex flex-col items-center p-5 text-center"
+            >
+              <span className="font-mono text-[13px] font-semibold text-accent/80">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <h3 className="mt-3 text-base font-semibold text-ink">
+                {step.title}
+              </h3>
+              <p className="mt-2 text-[15px] leading-7 text-muted">
+                {step.description}
+              </p>
+              {step.code ? (
+                <code className="mt-4 block w-full overflow-x-auto rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-center font-mono text-[14px] text-accent">
+                  {step.code}
+                </code>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
