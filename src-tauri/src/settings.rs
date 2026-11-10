@@ -25,11 +25,17 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub widget_always_on_top: bool,
     pub show_widget_on_start: bool,
-    /// Destroy the hidden widget after this many seconds to reclaim its
-    /// webview. `0` keeps it warm indefinitely.
+    /// Shared idle window for UI memory. After this many seconds with every
+    /// window hidden, the widget's renderer is killed. On Linux the core
+    /// re-execs five seconds later, once the eviction has had time to finish.
+    /// `0` keeps the widget warm and disables the core recycle.
     pub widget_eviction_secs: u64,
     pub launch_at_login: bool,
 }
+
+/// Grace period after the hidden widget's renderer is killed before the Linux
+/// core re-execs, so the eviction has time to complete.
+const RECYCLE_GRACE_SECS: u64 = 5;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -86,6 +92,17 @@ impl Settings {
         self.deepseek_poll_interval_secs = self.deepseek_poll_interval_secs.clamp(60, 86_400);
         self.widget_eviction_secs = self.widget_eviction_secs.min(86_400);
         self
+    }
+
+    /// Seconds with every window hidden before the Linux core re-execs. This is
+    /// the widget eviction window plus a short grace period so the renderer
+    /// eviction has finished first. `0` disables both.
+    pub fn idle_recycle_secs(&self) -> u64 {
+        if self.widget_eviction_secs == 0 {
+            0
+        } else {
+            self.widget_eviction_secs.saturating_add(RECYCLE_GRACE_SECS)
+        }
     }
 
     pub fn validate(&self) -> Result<(), AppError> {
@@ -189,6 +206,21 @@ mod tests {
             settings.widget_eviction_secs,
             Settings::default().widget_eviction_secs
         );
+    }
+
+    #[test]
+    fn idle_recycle_follows_widget_eviction_with_a_grace_period() {
+        let settings = Settings {
+            widget_eviction_secs: 60,
+            ..Settings::default()
+        };
+        assert_eq!(settings.idle_recycle_secs(), 65);
+
+        let disabled = Settings {
+            widget_eviction_secs: 0,
+            ..Settings::default()
+        };
+        assert_eq!(disabled.idle_recycle_secs(), 0);
     }
 
     #[test]

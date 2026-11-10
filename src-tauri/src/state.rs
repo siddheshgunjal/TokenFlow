@@ -36,6 +36,55 @@ impl RefreshCoordinator {
     }
 }
 
+/// Tracks proxy traffic for the idle re-exec.
+///
+/// The recycle may only run when no request is being forwarded. A guard is
+/// held for the whole lifetime of a proxied request, including its streaming
+/// response, so a long Ollama generation can never be interrupted. The last
+/// activity timestamp is touched on both start and finish, so the idle window
+/// also starts after the final stream ends.
+#[derive(Default)]
+pub struct ProxyActivity {
+    in_flight: AtomicU64,
+    last_activity: AtomicI64,
+}
+
+pub struct ProxyActivityGuard {
+    activity: Arc<ProxyActivity>,
+}
+
+impl ProxyActivity {
+    pub fn begin(self: &Arc<Self>) -> ProxyActivityGuard {
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        self.touch();
+        ProxyActivityGuard {
+            activity: Arc::clone(self),
+        }
+    }
+
+    fn touch(&self) {
+        self.last_activity
+            .store(chrono::Utc::now().timestamp(), Ordering::SeqCst);
+    }
+
+    pub fn in_flight(&self) -> u64 {
+        self.in_flight.load(Ordering::SeqCst)
+    }
+
+    /// Unix timestamp of the last request start or finish; `0` before any
+    /// request has been proxied.
+    pub fn last_activity(&self) -> i64 {
+        self.last_activity.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for ProxyActivityGuard {
+    fn drop(&mut self) {
+        self.activity.in_flight.fetch_sub(1, Ordering::SeqCst);
+        self.activity.touch();
+    }
+}
+
 /// Where the widget should be anchored.
 ///
 /// Windows, macOS, and Linux tray activations all report physical screen
@@ -111,6 +160,11 @@ pub struct AppState {
     /// Number of windows currently shown. The snapshot bridge skips emissions
     /// when every window is hidden.
     pub visible_windows: Arc<AtomicU32>,
+    /// Proxy request accounting for the idle re-exec.
+    pub proxy_activity: Arc<ProxyActivity>,
+    /// Set once any webview has been created in this process. Only then can an
+    /// idle re-exec release meaningful UI-process memory.
+    pub webview_created: Arc<AtomicBool>,
     proxy_status: Arc<RwLock<ProxyStatus>>,
     settings: Arc<RwLock<Settings>>,
     secrets: Arc<RwLock<SecretState>>,
@@ -168,6 +222,8 @@ impl AppState {
             main_window: WindowFlags::new(visible_windows.clone()),
             widget_window: WindowFlags::new(visible_windows.clone()),
             visible_windows,
+            proxy_activity: Arc::new(ProxyActivity::default()),
+            webview_created: Arc::new(AtomicBool::new(false)),
             proxy_status,
             settings: Arc::new(RwLock::new(settings)),
             secrets: Arc::new(RwLock::new(secret_state)),
@@ -241,6 +297,14 @@ impl AppState {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    pub fn mark_webview_created(&self) {
+        self.webview_created.store(true, Ordering::SeqCst);
+    }
+
+    pub fn has_webview(&self) -> bool {
+        self.webview_created.load(Ordering::SeqCst)
     }
 
     pub fn update_proxy_status(&self, status: ProxyStatus) {

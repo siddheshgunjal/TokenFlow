@@ -57,7 +57,7 @@ The core owns all data collection and querying; the UI is a pure renderer. The o
 
 - **Desktop shell**: Tauri 2 with two-action native tray menu on Windows/macOS, icon-only StatusNotifierItem on Linux, and two windows (`main` dashboard, `widget` panel) that are created on demand and never at autostart. On Linux a window is created once and reused (hide, kill its renderer, reload on reveal); see [Window and renderer lifecycle](#window-and-renderer-lifecycle).
 - **Snapshot service**: `snapshot.rs` — the single core-owned rebuild path. Owns the only `Db::snapshot()` call, a cached `Arc<DashboardSummary>`, a monotonic `revision`, and a `Notify`-driven scheduler with 400ms debounce and a 60s day-rollover heartbeat. No Tauri types inside the service; `spawn_bridge` is the only Tauri-facing code.
-- **Memory hygiene**: `memory.rs` — a 15-minute idle tick that clears the WebKit resource cache and releases glibc free pages, but only while every window is hidden. `heap_stats.rs` (cargo feature `heap-stats`) — optional counting allocator that logs core heap counters every 60s.
+- **Memory hygiene**: `memory.rs` — a 15-minute idle tick that clears the WebKit resource cache and releases glibc free pages, but only while every window is hidden. `recycle.rs` — Linux-only idle re-exec that returns the core to its pre-webview footprint after `widget_eviction_secs` + 5 s (60 + 5 = 65 s by default). `heap_stats.rs` (cargo feature `heap-stats`) — optional counting allocator that logs core heap counters every 60s.
 - **Refresh coordinator**: `RefreshCoordinator` in `state.rs` — an async `Mutex` plus a `last_refresh_at` atomic. Both the DeepSeek worker and `refresh_core` acquire it, so double-clicks and two open windows produce one network call, not two.
 - **Proxy**: Axum 0.7 running on loopback only, with hop-by-hop header filtering and a 64 MiB request body cap.
 - **Stream parser**: Buffered NDJSON + SSE parser that handles input/output/cached token split, flushes complete lines only, and deduplicates by request ID.
@@ -103,6 +103,7 @@ platform because WebKitGTK's webview teardown is unreliable; see the
 | Reopen suspended widget | reload, show, emit `widget-shown` | create a new window, emit `widget-shown` |
 | Every window hidden | snapshot bridge skips `core-snapshot` emissions | same |
 | Window minimized | snapshot bridge skips that window; it re-syncs on focus | same |
+| Every window hidden and proxy quiet past `widget_eviction_secs` + 5 s (60 + 5 = 65 s) | re-exec headless (`--recycled`), releasing the UI-process library working set | no-op (windows are destroyed on close) |
 
 `widget_eviction_secs = 0` disables suspension and keeps the widget warm. This
 is an internal/advanced setting (default 60); it is deliberately not exposed in
@@ -117,10 +118,28 @@ after the process was killed explicitly, still leaked ~1 MB of UI-process
 memory. Creating one webview per role and only terminating its renderer avoids
 both leaks.
 
-`WebKitNetworkProcess` (~40 MB) remains resident after the first window opens.
-Tauri deliberately keeps the WebKit `WebContext` alive on Linux because WebKit
-does not close the network process on its own, and Tauri exposes no API to drop
-it. It is the steady-state floor, not a leak; do not force-kill it.
+`WebKitNetworkProcess` (~57 MB on the GNOME 51 runtime) remains resident after
+the first window opens. Tauri deliberately keeps the WebKit `WebContext` alive
+on Linux because WebKit does not close the network process on its own, and
+Tauri exposes no API to drop it. It is the steady-state floor, not a leak; do
+not force-kill it.
+
+**Why an idle re-exec is needed.** Opening the first webview permanently loads
+roughly 90 MB of GTK, WebKitGTK, JavaScriptCore, and Mesa (`libgallium` +
+`libLLVM`) library pages into the *core* process, which is also the UI process
+on Linux. Closing a window releases only its renderer; those library pages
+cannot be unloaded from a live process, and `WEBKIT_DISABLE_COMPOSITING_MODE`,
+`GDK_GL=disable`, DMABUF switches, native Wayland, and allocator tuning were
+all measured and none removed them. `recycle.rs` therefore waits until every
+window has been hidden **and** no proxied request is in flight for
+`widget_eviction_secs` + 5 s (60 + 5 = 65 s by default; `0` disables both), so
+the widget renderer eviction finishes first. It then flushes the WAL, releases
+the single-instance D-Bus name, and `exec`s the same binary with `--recycled`. The
+replacement starts headless (no window, no `WebKitNetworkProcess`), re-binds
+the proxy and tray, and returns to the pre-webview footprint. Measured on the
+GNOME 51 runtime: **167 MB while a warm UI process exists vs 75 MB after the
+re-exec**, with a 5 ms proxy rebind. Windows and macOS destroy webviews per
+close, so the re-exec is Linux-only.
 
 ## Request and data flow
 
@@ -202,6 +221,8 @@ Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique inde
 
 23. **Optional heap accounting** — the `heap-stats` cargo feature installs a counting global allocator (`heap_stats.rs`) that tracks live bytes, peak bytes, and allocation calls, and logs them every 60s at debug level. It separates "the core's own heap grew" from "GTK/WebKit retained something" during long captures. It is off by default because it adds two atomic operations to every allocation; enable with `cargo run --features heap-stats` and `RUST_LOG=tokenflow=debug`.
 
+24. **Idle core recycle on Linux** — `recycle.rs` re-execs the process when every window has been hidden and the proxy has been quiet for `widget_eviction_secs` + 5 s (60 + 5 = 65 s by default; `0` disables both). The five-second grace lets the widget renderer eviction finish before the process is replaced. This is the only supported way to release the GTK/WebKit/Mesa library working set that the first webview loads into the core process. The decision is gated on `webview_created`, `visible_windows == 0`, `proxy_activity.in_flight() == 0`, and the quiet window; `ProxyActivityGuard` is held for the whole streamed response, so a long Ollama generation can never be cut. The replacement is started with `--recycled` so it skips window creation, and `reap_inherited_children()` clears the pre-exec `WebKitNetworkProcess` before the new image starts WebKit children. `exec` (rather than spawn-and-exit) preserves the Flatpak sandbox and PID, and the proxy rebinds immediately. The WAL is checkpointed before the exec. The teardown and exec run on a plain OS thread, not the Tokio worker: `tauri_plugin_single_instance::destroy` releases the D-Bus name through a blocking zbus connection, which panics with "Cannot start a runtime from within a runtime" when invoked from a Tokio worker.
+
 ## Technology stack
 
 - **Framework**: Tauri 2, React 18, TypeScript, Vite, Tailwind CSS, Framer Motion
@@ -232,7 +253,7 @@ The repository structure has been reorganized per the documentation standardizat
 - Duplicate suppression uses `request_id`.
 - The warm widget keeps one renderer alive while hidden until `widgetEvictionSecs` elapses (default 60); on Linux the renderer is then killed (the hidden window is kept) and the next open reloads, while Windows/macOS destroy the window. This is an internal setting, not shown in the Settings UI; `0` keeps the widget warm indefinitely.
 - On Linux, the dashboard and widget windows are created once and kept hidden between uses; only their renderer processes are released. This sidesteps wry's IPC reference cycle, so idle RSS stays flat instead of growing per open/close. The trade-off is a small fixed UI-side shell per window and a page reload on reopen.
-- `WebKitNetworkProcess` is a deliberate resident. Tauri keeps the WebKit `WebContext` alive for the app's lifetime on Linux because WebKit does not close the network process when no webviews are running; the alternative (dropping the context) is not exposed by Tauri's API. Its cost (~40 MB) is the steady-state floor after the first window has ever opened, and the plan's gate (≤120 MB) still holds. Do not force-kill it: WebKit would only respawn it on the next window and treats external termination as a crash.
+- `WebKitNetworkProcess` is a deliberate resident while a webview exists. Tauri keeps the WebKit `WebContext` alive for the app's lifetime on Linux because WebKit does not close the network process when no webviews are running; the alternative (dropping the context) is not exposed by Tauri's API. Its cost (~57 MB on the GNOME 51 runtime) plus the UI process's ~90 MB of WebKit/Mesa library pages means a process that has opened a window sits at ~160 MB, not the cold-core ~60–75 MB. The idle re-exec in `recycle.rs` returns to the cold-core footprint after `widget_eviction_secs` + 5 s with no window and no proxy traffic; the ≤120 MB gate applies to that post-recycle state, not to a process that still has a warm UI. Do not force-kill the network process: WebKit would only respawn it on the next window and treats external termination as a crash.
 - Deferred items: single-click GNOME tray activation, DeepSeek balance overlay, token estimation, proxy auth token, auto-updater/signing, retention/export, recorded-stream integration tests, cost estimation.
 - Follow-ups: parser fixtures, cross-platform tray verification, keychain verification on macOS/Windows/GNOME/KDE, transparent-panel verification, export/backup path.
 

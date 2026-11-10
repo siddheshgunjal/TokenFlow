@@ -22,7 +22,7 @@ use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use crate::{
     models::{OllamaLogInsert, ProxyStatus},
-    state::AppState,
+    state::{AppState, ProxyActivityGuard},
 };
 
 const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
@@ -117,6 +117,9 @@ async fn health(State(ctx): State<ProxyContext>) -> impl IntoResponse {
 }
 
 async fn proxy_handler(State(ctx): State<ProxyContext>, request: Request<Body>) -> Response {
+    // Held for the request and its streamed response; the idle re-exec checks
+    // this counter before replacing the process.
+    let activity = ctx.state.proxy_activity.begin();
     let started = Instant::now();
     let method = request.method().clone();
     let endpoint = request.uri().path().to_string();
@@ -167,7 +170,14 @@ async fn proxy_handler(State(ctx): State<ProxyContext>, request: Request<Body>) 
 
     let status = upstream_response.status();
     let response_headers = filtered_response_headers(upstream_response.headers());
-    let inspector = StreamInspector::new(ctx.state, request_id, endpoint, status.as_u16(), started);
+    let inspector = StreamInspector::new(
+        ctx.state,
+        request_id,
+        endpoint,
+        status.as_u16(),
+        started,
+        activity,
+    );
 
     let body_stream = upstream_response.bytes_stream();
     let inspected_stream = stream::unfold(
@@ -207,6 +217,8 @@ struct StreamInspector {
     buffer: Vec<u8>,
     model: Option<String>,
     recorded: bool,
+    /// Released when the response stream ends or the client disconnects.
+    _activity: ProxyActivityGuard,
 }
 
 impl StreamInspector {
@@ -216,6 +228,7 @@ impl StreamInspector {
         endpoint: String,
         status: u16,
         started: Instant,
+        activity: ProxyActivityGuard,
     ) -> Self {
         Self {
             state,
@@ -226,6 +239,7 @@ impl StreamInspector {
             buffer: Vec::with_capacity(8 * 1024),
             model: None,
             recorded: false,
+            _activity: activity,
         }
     }
 

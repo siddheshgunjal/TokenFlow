@@ -130,7 +130,10 @@ export interface Settings {
   closeToTray: boolean;
   widgetAlwaysOnTop: boolean;
   showWidgetOnStart: boolean;
-  /** Destroy the hidden widget after this many seconds; 0 keeps it warm. */
+  /**
+   * Idle window before the hidden widget's renderer is killed. On Linux the
+   * core recycle follows 5 s later; 0 disables both.
+   */
   widgetEvictionSecs: number;
   launchAtLogin: boolean;
 }
