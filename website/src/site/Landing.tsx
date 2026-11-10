@@ -176,8 +176,7 @@ function GettingStarted() {
     },
     {
       title: "Configure clients",
-      description:
-        "Point your Ollama clients at `http://127.0.0.1:11435` (native) or `/v1` (OpenAI-compatible).",
+      description: "Point your Ollama clients at `http://127.0.0.1:11435`",
       code: "http://127.0.0.1:11435/v1",
     },
     {
