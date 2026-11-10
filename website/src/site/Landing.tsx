@@ -208,7 +208,7 @@ function GettingStarted() {
               key={step.title}
               className="card flex flex-col items-center p-5 text-center"
             >
-              <span className="font-mono text-[13px] font-semibold text-accent/80">
+              <span className="font-mono text-lg font-semibold text-accent/80">
                 {String(index + 1).padStart(2, "0")}
               </span>
               <h3 className="mt-3 text-base font-semibold text-ink">
@@ -657,7 +657,7 @@ function HowItWorks() {
               key={step.title}
               className="card flex flex-col items-center p-5 text-center"
             >
-              <span className="font-mono text-[13px] font-semibold text-accent/80">
+              <span className="font-mono text-lg font-semibold text-accent/80">
                 {String(index + 1).padStart(2, "0")}
               </span>
               <h3 className="mt-3 text-base font-semibold text-ink">
