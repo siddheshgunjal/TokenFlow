@@ -12,7 +12,11 @@
   <launchable
         type="desktop-id"
     >io.github.siddheshgunjal.TokenFlow.desktop</launchable>
-  <url type="homepage">https://github.com/siddheshgunjal/TokenFlow</url>
+  <url type="homepage">https://token-flow.xyz/</url>
+  <url type="help">https://token-flow.xyz/#getting-started</url>
+  <url
+        type="bugtracker"
+    >https://github.com/siddheshgunjal/TokenFlow/issues</url>
   <branding>
     <color type="primary">#00D4C0</color>
   </branding>
@@ -62,4 +66,26 @@
     <release version="0.1.0+alpha.2" date="2026-11-09" />
     <release version="0.1.0+alpha.1" date="2026-11-06" />
   </releases>
+  <screenshot>
+    <image
+            src="https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/main_dashboard_1.png"
+            description="Main dashboard showing usage overview including input, output, cache hit rate, and DeepSeek balance."
+        />
+    <image
+            src="https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/main_dashboard_2.png"
+            description="Detailed usage breakdown with model-specific token metrics and recent requests."
+        />
+    <image
+            src="https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/settings_1.png"
+            description="Settings for configuring the Ollama proxy and DeepSeek API credentials."
+        />
+    <image
+            src="https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/settings_2.png"
+            description="DeepSeek configuration and desktop behavior settings."
+        />
+    <image
+            src="https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/widget.png"
+            description="The floating tray widget for quick glance at token usage and balance."
+        />
+  </screenshot>
 </component>
