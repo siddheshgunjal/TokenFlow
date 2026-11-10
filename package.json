@@ -1,7 +1,7 @@
 {
   "name": "tokenflow",
   "private": true,
-  "version": "0.1.0+alpha.2",
+  "version": "0.1.0+alpha.3",
   "type": "module",
   "description": "Local-first desktop analytics for Ollama and DeepSeek usage",
   "author": "Siddhesh Gunjal",
@@ -13,7 +13,7 @@
     "type": "git",
     "url": "https://github.com/siddheshgunjal/TokenFlow.git"
   },
-  "homepage": "https://github.com/siddheshgunjal/TokenFlow#readme",
+  "homepage": "https://token-flow.xyz/",
   "bugs": {
     "url": "https://github.com/siddheshgunjal/TokenFlow/issues"
   },

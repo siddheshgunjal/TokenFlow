@@ -22,7 +22,7 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 ![Build](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/release.yml?style=for-the-badge&logo=build&label=Build)
 ![Dev Build](https://img.shields.io/github/v/release/siddheshgunjal/TokenFlow?include_prereleases&style=for-the-badge&label=Dev%20build)
 
-[<img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Fsiddheshgunjal.github.io%2F&style=for-the-badge&logo=htmx">][website]
+[<img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Ftoken-flow.xyz%2F&style=for-the-badge&logo=htmx">][website]
 
 </div>
 
@@ -108,4 +108,4 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 
 GPL-3.0-only. See [LICENSE](LICENSE) for full text.
 
-[website]: https://siddheshgunjal.github.io/
+[website]: https://token-flow.xyz/
