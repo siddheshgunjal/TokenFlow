@@ -18,7 +18,7 @@ const RELEASES_URL =
 const README_URL = "https://github.com/siddheshgunjal/TokenFlow#readme";
 const CONTRIBUTING_URL =
   "https://github.com/siddheshgunjal/TokenFlow/blob/main/CONTRIBUTING.md";
-const PORTFOLIO_URL = "https://siddheshgunjal.github.io/";
+const PORTFOLIO_URL = "https://token-flow.xyz/";
 
 type OS = "macOS" | "Windows" | "Linux" | "Desktop";
 type DownloadPlatform = Exclude<OS, "Desktop">;
