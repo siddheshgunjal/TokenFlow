@@ -8,10 +8,6 @@ name: Deploy website
 # set the WEBSITE_BASE repository variable to /TokenFlow/.
 
 on:
-  push:
-    paths:
-      - "website/**"
-      - ".github/workflows/deploy-website.yml"
   release:
     types: [published]
   workflow_dispatch:
