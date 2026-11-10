@@ -130,8 +130,11 @@ export interface Settings {
   closeToTray: boolean;
   widgetAlwaysOnTop: boolean;
   showWidgetOnStart: boolean;
-  /** Destroy the hidden widget after this many seconds; 0 keeps it warm. */
-  widgetEvictionSecs: number;
+  /**
+   * Re-exec the Linux core after this many seconds with no visible window and
+   * no proxy traffic; 0 disables the recycle.
+   */
+  idleRecycleSecs: number;
   launchAtLogin: boolean;
 }
 
