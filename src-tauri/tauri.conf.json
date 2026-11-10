@@ -63,7 +63,7 @@
     "category": "DeveloperTool",
     "shortDescription": "Local token usage analytics for Ollama and DeepSeek",
     "longDescription": "TokenFlow is a local-first desktop companion that proxies Ollama traffic to measure token usage and polls the DeepSeek balance API. All telemetry stays on your machine.",
-    "copyright": "Copyright © 2026 TokenFlow contributors",
+    "copyright": "Copyright © 2026 Siddhesh Gunjal",
     "licenseFile": "../LICENSE",
     "homepage": "https://token-flow.xyz/",
     "linux": {
