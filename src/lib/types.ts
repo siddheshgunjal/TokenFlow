@@ -131,10 +131,10 @@ export interface Settings {
   widgetAlwaysOnTop: boolean;
   showWidgetOnStart: boolean;
   /**
-   * Idle window before the hidden widget's renderer is killed. On Linux the
-   * core recycle follows 5 s later; 0 disables both.
+   * Re-exec the Linux core after this many seconds with no visible window and
+   * no proxy traffic; 0 disables the recycle.
    */
-  widgetEvictionSecs: number;
+  idleRecycleSecs: number;
   launchAtLogin: boolean;
 }
 

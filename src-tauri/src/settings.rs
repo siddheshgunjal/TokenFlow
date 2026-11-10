@@ -25,17 +25,13 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub widget_always_on_top: bool,
     pub show_widget_on_start: bool,
-    /// Shared idle window for UI memory. After this many seconds with every
-    /// window hidden, the widget's renderer is killed. On Linux the core
-    /// re-execs five seconds later, once the eviction has had time to finish.
-    /// `0` keeps the widget warm and disables the core recycle.
-    pub widget_eviction_secs: u64,
+    /// Re-exec the Linux core after every window has been hidden and the proxy
+    /// has been quiet for this many seconds. The widget renderer is killed
+    /// immediately on hide; this window releases the UI-process library working
+    /// set. `0` disables the recycle.
+    pub idle_recycle_secs: u64,
     pub launch_at_login: bool,
 }
-
-/// Grace period after the hidden widget's renderer is killed before the Linux
-/// core re-execs, so the eviction has time to complete.
-const RECYCLE_GRACE_SECS: u64 = 5;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -56,7 +52,10 @@ impl Default for Settings {
             close_to_tray: true,
             widget_always_on_top: true,
             show_widget_on_start: false,
-            widget_eviction_secs: 60,
+            idle_recycle_secs: env::var("TOKENFLOW_IDLE_RECYCLE_SECS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(60),
             launch_at_login: false,
         }
     }
@@ -90,19 +89,8 @@ impl Settings {
             .trim_end_matches('/')
             .to_string();
         self.deepseek_poll_interval_secs = self.deepseek_poll_interval_secs.clamp(60, 86_400);
-        self.widget_eviction_secs = self.widget_eviction_secs.min(86_400);
+        self.idle_recycle_secs = self.idle_recycle_secs.min(86_400);
         self
-    }
-
-    /// Seconds with every window hidden before the Linux core re-execs. This is
-    /// the widget eviction window plus a short grace period so the renderer
-    /// eviction has finished first. `0` disables both.
-    pub fn idle_recycle_secs(&self) -> u64 {
-        if self.widget_eviction_secs == 0 {
-            0
-        } else {
-            self.widget_eviction_secs.saturating_add(RECYCLE_GRACE_SECS)
-        }
     }
 
     pub fn validate(&self) -> Result<(), AppError> {
@@ -134,9 +122,9 @@ impl Settings {
             ));
         }
 
-        if self.widget_eviction_secs > 86_400 {
+        if self.idle_recycle_secs > 86_400 {
             return Err(AppError::Config(
-                "Widget idle eviction must be 0 (disabled) or at most 86400 seconds.".to_string(),
+                "Idle recycle must be 0 (disabled) or at most 86400 seconds.".to_string(),
             ));
         }
 
@@ -200,38 +188,33 @@ mod tests {
         let settings: Settings = serde_json::from_str(raw).expect("old settings blob deserializes");
         assert!(!settings.launch_at_login);
         assert!(settings.start_minimized);
-        // A settings blob written before widget eviction existed inherits the
+        // A settings blob written before the idle recycle existed inherits the
         // current default via `#[serde(default)]`.
         assert_eq!(
-            settings.widget_eviction_secs,
-            Settings::default().widget_eviction_secs
+            settings.idle_recycle_secs,
+            Settings::default().idle_recycle_secs
         );
     }
 
     #[test]
-    fn idle_recycle_follows_widget_eviction_with_a_grace_period() {
+    fn idle_recycle_serializes_as_camel_case() {
         let settings = Settings {
-            widget_eviction_secs: 60,
-            ..Settings::default()
-        };
-        assert_eq!(settings.idle_recycle_secs(), 65);
-
-        let disabled = Settings {
-            widget_eviction_secs: 0,
-            ..Settings::default()
-        };
-        assert_eq!(disabled.idle_recycle_secs(), 0);
-    }
-
-    #[test]
-    fn widget_eviction_serializes_as_camel_case() {
-        let settings = Settings {
-            widget_eviction_secs: 90,
+            idle_recycle_secs: 90,
             ..Settings::default()
         };
 
         let raw = serde_json::to_string(&settings).expect("settings serialize");
-        assert!(raw.contains("\"widgetEvictionSecs\":90"));
+        assert!(raw.contains("\"idleRecycleSecs\":90"));
+    }
+
+    #[test]
+    fn idle_recycle_is_clamped_to_a_day() {
+        let settings = Settings {
+            idle_recycle_secs: u64::MAX,
+            ..Settings::default()
+        }
+        .normalized();
+        assert_eq!(settings.idle_recycle_secs, 86_400);
     }
 
     #[test]

@@ -8,11 +8,11 @@
 //! the only way back to the pre-webview footprint.
 //!
 //! The recycle waits for every window to be hidden and for the proxy to be
-//! quiet for the widget eviction window plus a five-second grace period
-//! (60 + 5 = 65 seconds by default), so the renderer eviction has finished and
-//! no request is interrupted. The replacement process starts headless
-//! (`--recycled`) and re-binds the proxy and tray; the next window open creates
-//! a fresh webview as usual.
+//! quiet for `idle_recycle_secs` (60 seconds by default), so no request is
+//! interrupted. Widget renderers are torn down immediately on hide; this
+//! window releases the UI-process library working set. The replacement process
+//! starts headless (`--recycled`) and re-binds the proxy and tray; the next
+//! window open creates a fresh webview as usual.
 
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
@@ -61,7 +61,7 @@ pub fn spawn(app: AppHandle, state: AppState) {
         loop {
             ticker.tick().await;
 
-            let idle_recycle_secs = state.settings().idle_recycle_secs();
+            let idle_recycle_secs = state.settings().idle_recycle_secs;
             if idle_recycle_secs == 0 || !state.has_webview() {
                 idle_since = None;
                 continue;
@@ -229,8 +229,8 @@ mod tests {
 
     #[test]
     fn waits_for_the_full_idle_window() {
-        assert!(!due(true, 0, 0, 64, true, 65));
-        assert!(due(true, 0, 0, 65, true, 65));
+        assert!(!due(true, 0, 0, 59, true, 60));
+        assert!(due(true, 0, 0, 60, true, 60));
     }
 
     #[test]

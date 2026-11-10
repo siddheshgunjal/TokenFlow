@@ -173,9 +173,6 @@ pub struct AppState {
     /// Serializes on-demand window creation so two simultaneous requests do
     /// not build the same window twice. Used by the window lifecycle module.
     pub window_lock: Arc<Mutex<()>>,
-    /// Bumped on every widget show/hide so a pending eviction task can tell
-    /// whether it is still the current hide generation.
-    widget_hide_generation: Arc<AtomicU64>,
     app: AppHandle,
 }
 
@@ -229,7 +226,6 @@ impl AppState {
             secrets: Arc::new(RwLock::new(secret_state)),
             tray_anchor: Arc::new(RwLock::new(None)),
             window_lock: Arc::new(Mutex::new(())),
-            widget_hide_generation: Arc::new(AtomicU64::new(0)),
             app: app.clone(),
         })
     }
@@ -331,68 +327,5 @@ impl AppState {
             .tray_anchor
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// Invalidates any pending widget eviction. Called whenever the widget is
-    /// shown so a stale timer can never destroy a visible window.
-    pub fn cancel_widget_eviction(&self) {
-        self.widget_hide_generation.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Schedules suspension of the warm widget once it has been hidden for
-    /// `widget_eviction_secs`. On Linux this kills the widget's web process and
-    /// keeps the (hidden) window for a leak-free reload on the next open; other
-    /// platforms destroy the window. A value of `0` disables eviction.
-    ///
-    /// The hide generation guards against races: showing or re-hiding the
-    /// widget bumps it, so only the latest timer acts.
-    pub fn schedule_widget_eviction(&self) {
-        let seconds = self.settings().widget_eviction_secs;
-        if seconds == 0 {
-            return;
-        }
-
-        let generation = self.widget_hide_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let state = self.clone();
-        let flags = self.widget_window.clone();
-        let app = self.app.clone();
-
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(seconds)).await;
-
-            // A newer show/hide superseded this timer.
-            if state.widget_hide_generation.load(Ordering::SeqCst) != generation {
-                return;
-            }
-
-            // Do the check and the teardown in one main-thread turn so WebKit
-            // cannot respawn the process between them.
-            let app_for_task = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                let Some(window) = app_for_task.get_webview_window("widget") else {
-                    return;
-                };
-                if window.is_visible().unwrap_or(false) {
-                    return;
-                }
-
-                tracing::debug!(seconds, "suspending the idle widget renderer");
-
-                #[cfg(target_os = "linux")]
-                {
-                    // Kill the renderer but keep the window and webview so the
-                    // next open reloads instead of rebuilding the whole widget
-                    // (which leaks UI-side memory per cycle in wry/Tauri).
-                    crate::windows::terminate_web_process(&window);
-                    flags.set_suspended(true);
-                }
-
-                #[cfg(not(target_os = "linux"))]
-                {
-                    let _ = flags;
-                    let _ = window.destroy();
-                }
-            });
-        });
     }
 }

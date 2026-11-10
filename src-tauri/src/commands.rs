@@ -369,17 +369,12 @@ pub fn quit_app(app: AppHandle) {
 
 /// Shared by the tray menu and the `toggle_widget` command.
 ///
-/// The widget is created on first open and kept warm for
-/// `widget_eviction_secs` after hiding; once that window elapses the webview is
-/// destroyed to reclaim memory, and the next open cold-starts and fetches the
-/// core snapshot.
+/// The widget is created on first open. Hiding it tears down its renderer
+/// immediately: Linux keeps the hidden window/webview shell (reloading on the
+/// next open) to avoid wry's GObject-cycle leak, while Windows and macOS
+/// destroy the window. The idle core recycle then releases the UI-process
+/// working set after `idle_recycle_secs`.
 pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bool, String> {
-    // Invalidate any pending eviction before touching the window so a timer
-    // cannot destroy a window we are about to show or have just rebuilt.
-    if let Some(state) = app.try_state::<AppState>() {
-        state.cancel_widget_eviction();
-    }
-
     let window = crate::windows::ensure_window(app, "widget")?;
     let target = match visible {
         Some(value) => value,
@@ -399,7 +394,7 @@ pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bo
         position_widget(&window, state.inner());
 
         // On Linux the window is kept after hiding; reload the page when its
-        // renderer was suspended by the eviction timer.
+        // renderer was suspended on hide.
         #[cfg(target_os = "linux")]
         if state.widget_window.take_suspended() {
             crate::windows::reload_window(&window);
@@ -416,17 +411,24 @@ pub fn toggle_widget_window(app: &AppHandle, visible: Option<bool>) -> Result<bo
         }
     } else {
         window.hide().map_err(|err| err.to_string())?;
-        if let Some(state) = app.try_state::<AppState>() {
-            state.widget_window.set_visible(false);
-        }
+        let state = app.state::<AppState>();
+        state.widget_window.set_visible(false);
         if let Err(err) = app.emit("widget-hidden", ()) {
             tracing::warn!(%err, "could not emit widget-hidden");
         }
 
-        // Start the idle timer that suspends/kills the warm renderer after
-        // `widget_eviction_secs` (no-op when the setting is 0).
-        if let Some(state) = app.try_state::<AppState>() {
-            state.schedule_widget_eviction();
+        #[cfg(target_os = "linux")]
+        {
+            // Kill the renderer now instead of keeping a warm widget. The
+            // hidden window and webview shell remain for a leak-free reload;
+            // the core recycle releases the UI-process working set later.
+            crate::windows::terminate_web_process(&window);
+            state.widget_window.set_suspended(true);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = window.destroy();
         }
     }
 
