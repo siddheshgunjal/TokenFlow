@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import logoMark from "../assets/logo-mark.png";
 import { Icon, type IconName } from "../demo/components/Icons";
@@ -10,18 +10,15 @@ import {
 } from "../demo/lib/format";
 import { mockCoreSnapshot } from "../demo/lib/mock";
 import { DemoEmbed } from "./DemoEmbed";
+import { DownloadDialog } from "./DownloadDialog";
 import { latestReleaseVersion } from "./releaseVersion";
+import { detectOS, type DownloadPlatform } from "./platform";
 
 const GITHUB_URL = "https://github.com/siddheshgunjal/TokenFlow";
-const RELEASES_URL =
-  "https://github.com/siddheshgunjal/TokenFlow/releases/latest";
 const README_URL = "https://github.com/siddheshgunjal/TokenFlow#readme";
 const CONTRIBUTING_URL =
   "https://github.com/siddheshgunjal/TokenFlow/blob/main/CONTRIBUTING.md";
-const PORTFOLIO_URL = "https://token-flow.xyz/";
-
-type OS = "macOS" | "Windows" | "Linux" | "Desktop";
-type DownloadPlatform = Exclude<OS, "Desktop">;
+const PORTFOLIO_URL = "https://siddheshgunjal.github.io/";
 
 const FEATURES: Array<{
   icon: IconName;
@@ -62,22 +59,20 @@ const FEATURES: Array<{
     icon: "shield",
     title: "Private and lightweight",
     description:
-      "Loopback-only proxy, local processing, no telemetry. ~65 MB in the background.",
+      "Loopback-only proxy, local processing, no telemetry. ~60 MB in the background.",
   },
 ];
 
-function detectOS(): OS {
-  if (typeof navigator === "undefined") return "Desktop";
-  const ua = navigator.userAgent;
-
-  if (/Windows/i.test(ua)) return "Windows";
-  if (/Macintosh|Mac OS X/i.test(ua)) return "macOS";
-  if (/CrOS/i.test(ua)) return "Desktop";
-  if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) return "Linux";
-  return "Desktop";
-}
-
 export function Landing() {
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloadPlatform, setDownloadPlatform] =
+    useState<DownloadPlatform>("Linux");
+  const openDownload = useCallback((platform: DownloadPlatform) => {
+    setDownloadPlatform(platform);
+    setDownloadOpen(true);
+  }, []);
+  const closeDownload = useCallback(() => setDownloadOpen(false), []);
+
   return (
     <div id="top" className="app-surface min-h-screen">
       <SiteHeader />
@@ -88,9 +83,14 @@ export function Landing() {
         <GettingStarted />
         <MemorySection />
         <HowItWorks />
-        <DownloadSection />
+        <DownloadSection onDownload={openDownload} />
       </main>
       <SiteFooter />
+      <DownloadDialog
+        open={downloadOpen}
+        platform={downloadPlatform}
+        onClose={closeDownload}
+      />
     </div>
   );
 }
@@ -165,24 +165,24 @@ function GettingStarted() {
   const steps = [
     {
       title: "Run Ollama",
-      description: "Ensure Ollama is running on `127.0.0.1:11434`.",
+      description: "Ensure Ollama is running on your machine at",
       code: "127.0.0.1:11434",
     },
     {
       title: "Launch TokenFlow",
       description:
-        "Launch TokenFlow and it will automatically proxy requests on `127.0.0.1:11435`.",
+        "Launch TokenFlow and it will automatically proxy requests on",
       code: "127.0.0.1:11435",
     },
     {
       title: "Configure clients",
-      description: "Point your Ollama clients at `http://127.0.0.1:11435`",
-      code: "http://127.0.0.1:11435/v1",
+      description: "Point your Local AI clients at",
+      code: "http://127.0.0.1:11435",
     },
     {
       title: "Send requests",
       description:
-        "Send completion requests - token counts appear in the dashboard after each stream.",
+        "Start sending requests to your Local AI clients and TokenFlow will capture the usage data.",
     },
   ];
 
@@ -191,7 +191,7 @@ function GettingStarted() {
       id="getting-started"
       className="scroll-mt-20 border-t border-white/[0.06] py-12 sm:py-16"
     >
-      <div className="mx-auto max-w-5xl px-5 lg:px-8">
+      <div className="mx-auto max-w-7xl px-5 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-base font-semibold uppercase tracking-[0.18em] text-accent">
             Getting Started
@@ -273,11 +273,11 @@ function Hero() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="key" className="h-3.5 w-3.5 text-warning" />
-            Keychain-backed
+            Keychain protection
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="terminal" className="h-3.5 w-3.5 text-accent" />
-            Rust · ~65 MB
+            Built with Rust
           </span>
         </div>
 
@@ -473,7 +473,7 @@ function FeatureSection() {
             Features
           </p>
           <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Understand the real cost of every prompt.
+            Understand your Local AI usage at a glance
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
             TokenFlow turns raw request logs into the numbers that matter:
@@ -485,7 +485,7 @@ function FeatureSection() {
           {FEATURES.map((feature) => (
             <div
               key={feature.title}
-              className="card flex flex-col items-center p-5 text-center transition-colors hover:border-white/[0.14] hover:bg-white/[0.03]"
+              className="card flex flex-col items-center p-5 text-center transition-colors hover:border-white/[0.14] hover:bg-white/[0.03] lg:min-h-[13.5rem] lg:justify-center"
             >
               <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent/10 text-accent ring-1 ring-accent/20">
                 <Icon name={feature.icon} className="h-5 w-5" />
@@ -516,13 +516,13 @@ function MemorySection() {
             Memory
           </p>
           <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Unlike Electron
-            <span className="block">TokenFlow stays put.</span>
+            Unlike other tools,
+            <span className="block">TokenFlow stays put</span>
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
             Browser and Electron-based tools can open around 300 MB and climb
-            toward 800 as you keep working. TokenFlow is built with Rust and
-            stays near 65 MB in the background.
+            toward 800 as you keep working. TokenFlow is built with Rust for a
+            small footprint and lower memory overhead
           </p>
         </div>
 
@@ -532,10 +532,10 @@ function MemorySection() {
             subtitle="Typical background use"
             dots={
               <div className="flex w-full flex-wrap justify-center gap-1.5 lg:justify-start">
-                <Dots count={7} tone="accent" />
+                <Dots count={6} tone="accent" />
               </div>
             }
-            value="~65"
+            value="~60"
           />
           <MemoryRow
             name="Typical Electron app"
@@ -551,7 +551,7 @@ function MemorySection() {
         </div>
 
         <p className="mt-8 text-center text-[13px] leading-6 text-muted/70">
-          One dot is 10 MB. TokenFlow stays around 65 MB in the background. The
+          One dot is 10 MB. TokenFlow stays around 60 MB in the background. The
           fainter dots are the memory a typical Electron app picks up over a
           long run.
         </p>
@@ -620,18 +620,18 @@ function HowItWorks() {
     {
       title: "Point your client at the proxy",
       description:
-        "Launch TokenFlow, then use the loopback proxy URL in Cursor, Continue, Cline, or any Ollama client.",
+        "When TokenFlow is running, use the loopback proxy URL in any of your Local AI clients",
       code: "http://127.0.0.1:11435",
     },
     {
       title: "Keep working as usual",
       description:
-        "Requests pass through unchanged to Ollama. TokenFlow records the response stream without modifying it.",
+        "Requests pass through unchanged to Ollama. TokenFlow records the response stream without modifying it",
     },
     {
       title: "Watch the dashboard fill in",
       description:
-        "Totals, model breakdowns, cache rates, and day-level charts update as your requests complete.",
+        "Totals, model breakdowns, cache rates, and day-level charts update as your requests complete",
     },
   ];
 
@@ -697,7 +697,11 @@ function HowItWorks() {
   );
 }
 
-function DownloadSection() {
+function DownloadSection({
+  onDownload,
+}: {
+  onDownload: (platform: DownloadPlatform) => void;
+}) {
   const detectedOS = detectOS();
   const platforms: Array<{
     name: DownloadPlatform;
@@ -705,7 +709,7 @@ function DownloadSection() {
   }> = [
     {
       name: "Linux",
-      description: ".flatpak, .rpm, .deb or AppImage for x64 and arm64.",
+      description: ".deb, .rpm, .AppImage, or Flatpak for x86_64 and ARM64.",
     },
     {
       name: "macOS",
@@ -732,7 +736,7 @@ function DownloadSection() {
             Download TokenFlow
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
-            Free and open source. Built with Rust, the desktop app uses about 65
+            Free and open source. Built with Rust, the desktop app uses about 60
             MB in the background.
           </p>
         </div>
@@ -751,16 +755,15 @@ function DownloadSection() {
                 <p className="mt-2 text-[15px] leading-7 text-muted">
                   {platform.description}
                 </p>
-                <a
-                  href={RELEASES_URL}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => onDownload(platform.name)}
                   className={`mt-5 w-full text-base ${
                     isCurrent ? "btn-primary" : "btn-secondary"
                   }`}
                 >
                   Download for {platform.name}
-                </a>
+                </button>
               </div>
             );
           })}
