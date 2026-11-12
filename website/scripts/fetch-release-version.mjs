@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const websiteRoot = join(repoRoot, "website");
 const target = join(websiteRoot, "src/site/releaseVersion.ts");
+const downloadsTarget = join(websiteRoot, "src/site/releaseDownloads.ts");
 const packageJson = JSON.parse(
   readFileSync(join(websiteRoot, "package.json"), "utf8"),
 );
@@ -165,12 +166,206 @@ async function fetchLatestFromFeed() {
   return normalize(value.trim());
 }
 
+// ---------------------------------------------------------------------------
+// Release download snapshot generation.
+//
+// IMPORTANT: the asset regexes below and the selection/build semantics MUST
+// stay in sync with website/src/site/downloads.ts. They are duplicated here
+// so the build script (which cannot import TS) produces the same snapshot
+// the runtime fetch path would select.
+// ---------------------------------------------------------------------------
+
+// Asset naming conventions (lowercased before matching):
+//   linux:   TokenFlow-<version>-linux-(x86_64|aarch64).(deb|rpm|appimage|flatpak)
+//   macos:   TokenFlow-<version>-macos-(x86_64|aarch64).dmg
+//   windows: TokenFlow-<version>-windows-(x86_64|aarch64)-setup.exe
+const LINUX_RE =
+  /^tokenflow-[^/]+-linux-(x86_64|aarch64)\.(deb|rpm|appimage|flatpak)$/;
+const MACOS_RE = /^tokenflow-[^/]+-macos-(x86_64|aarch64)\.dmg$/;
+const WINDOWS_RE = /^tokenflow-[^/]+-windows-(x86_64|aarch64)-setup\.exe$/;
+
+function classifyAsset(name) {
+  const lower = String(name ?? "").toLowerCase();
+
+  const linux = LINUX_RE.exec(lower);
+  if (linux) {
+    return { platform: "linux", arch: linux[1], format: linux[2] };
+  }
+  const macos = MACOS_RE.exec(lower);
+  if (macos) return { platform: "macos", arch: macos[1] };
+  const windows = WINDOWS_RE.exec(lower);
+  if (windows) return { platform: "windows", arch: windows[1] };
+  return null;
+}
+
+function hasRecognizedAssets(release) {
+  return (release.assets ?? []).some(
+    (asset) => classifyAsset(asset.name) !== null,
+  );
+}
+
+function sortByPublishedDesc(releases) {
+  return [...releases].sort(
+    (a, b) =>
+      Date.parse(b.published_at ?? b.created_at ?? "") -
+      Date.parse(a.published_at ?? a.created_at ?? ""),
+  );
+}
+
+// Selection rule: latest stable with assets wins; then latest prerelease with
+// assets; then any stable/prerelease. Drafts are always excluded.
+function pickDownloadRelease(releases) {
+  const visible = sortByPublishedDesc(
+    releases.filter((release) => !release.draft),
+  );
+
+  const stableWithAssets = visible.find(
+    (release) => !release.prerelease && hasRecognizedAssets(release),
+  );
+  const prereleaseWithAssets = visible.find(
+    (release) => release.prerelease && hasRecognizedAssets(release),
+  );
+  const stable = visible.find((release) => !release.prerelease);
+  const prerelease = visible.find((release) => release.prerelease);
+
+  return (
+    stableWithAssets ?? prereleaseWithAssets ?? stable ?? prerelease ?? null
+  );
+}
+
+function buildDownloads(release) {
+  const downloads = {
+    tag: release.tag_name ?? "",
+    releaseUrl: release.html_url ?? `https://github.com/${repository}/releases`,
+    publishedAt: release.published_at ?? null,
+    prerelease: Boolean(release.prerelease),
+    linux: { x86_64: {}, aarch64: {} },
+    macos: {},
+    windows: {},
+  };
+
+  for (const asset of release.assets ?? []) {
+    const kind = classifyAsset(asset.name);
+    if (!kind || !asset.browser_download_url) continue;
+    const entry = {
+      url: asset.browser_download_url,
+      size: Number.isFinite(asset.size) ? Number(asset.size) : 0,
+    };
+    if (kind.platform === "linux") {
+      downloads.linux[kind.arch][kind.format] = entry;
+    } else {
+      downloads[kind.platform][kind.arch] = entry;
+    }
+  }
+
+  return downloads;
+}
+
+// Fresh-checkout fallback: synthesize asset URLs from the naming convention
+// used by scripts/collect-bundles.sh and scripts/build-flatpak.sh. Sizes are
+// unknown (0) because the API was unavailable.
+function conventionSnapshot(tag) {
+  const version = tag.startsWith("v") ? tag.slice(1) : tag;
+  const base = `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}`;
+
+  const asset = (name) => ({ url: `${base}/${name}`, size: 0 });
+
+  const linux = { x86_64: {}, aarch64: {} };
+  const macos = {};
+  const windows = {};
+
+  for (const arch of ["x86_64", "aarch64"]) {
+    linux[arch].deb = asset(`TokenFlow-${version}-linux-${arch}.deb`);
+    linux[arch].rpm = asset(`TokenFlow-${version}-linux-${arch}.rpm`);
+    linux[arch].appimage = asset(`TokenFlow-${version}-linux-${arch}.AppImage`);
+    linux[arch].flatpak = asset(`TokenFlow-${version}-linux-${arch}.flatpak`);
+    macos[arch] = asset(`TokenFlow-${version}-macos-${arch}.dmg`);
+    windows[arch] = asset(`TokenFlow-${version}-windows-${arch}-setup.exe`);
+  }
+
+  return {
+    tag,
+    releaseUrl: `https://github.com/${repository}/releases/tag/${encodeURIComponent(tag)}`,
+    publishedAt: null,
+    prerelease: /(?:alpha|beta|rc)/i.test(tag),
+    linux,
+    macos,
+    windows,
+  };
+}
+
+function countAssets(data) {
+  let count = 0;
+  for (const arch of ["x86_64", "aarch64"]) {
+    count += Object.keys(data.linux[arch] ?? {}).length;
+  }
+  count += Object.keys(data.macos ?? {}).length;
+  count += Object.keys(data.windows ?? {}).length;
+  return count;
+}
+
+function fileExists(path) {
+  try {
+    readFileSync(path, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeSnapshot(data) {
+  writeFileSync(
+    downloadsTarget,
+    `// Generated by scripts/fetch-release-version.mjs. Do not edit by hand.\nimport type { ReleaseDownloads } from "./downloads";\n\nexport const latestReleaseDownloads: ReleaseDownloads = ${JSON.stringify(data, null, 2)};\n`,
+  );
+}
+
+function generateDownloadsSnapshot(releases, version) {
+  const apiOk = Array.isArray(releases);
+
+  let selected = null;
+  if (apiOk) {
+    selected = pickDownloadRelease(releases);
+  }
+
+  // Real API data with recognizable assets: emit a snapshot from it.
+  if (selected && hasRecognizedAssets(selected)) {
+    const data = buildDownloads(selected);
+    writeSnapshot(data);
+    console.log(`release downloads: ${data.tag} (${countAssets(data)} assets)`);
+    return;
+  }
+
+  // The API responded but the selected release has no recognizable assets
+  // (e.g. mid-upload). Never emit an empty snapshot over a working one.
+  if (apiOk) {
+    console.warn(
+      "release downloads: selected release has no recognized assets; keeping existing snapshot",
+    );
+    return;
+  }
+
+  // The API was unavailable. Do not overwrite an existing committed snapshot.
+  if (fileExists(downloadsTarget)) {
+    console.warn(
+      "release downloads: API unavailable; keeping existing snapshot",
+    );
+    return;
+  }
+
+  // Fresh checkout with no API data: synthesize a convention-based snapshot.
+  const data = conventionSnapshot(normalize(version));
+  writeSnapshot(data);
+  console.log(`release downloads: convention snapshot for ${data.tag}`);
+}
+
 async function main() {
   let version = null;
   let source = "";
+  let releases = null;
 
   try {
-    const releases = await fetchReleases();
+    releases = await fetchReleases();
     const visible = releases.filter((release) => !release.draft);
     const stable = visible.find((release) => !release.prerelease);
     const selected = stable ?? visible.find((release) => release.prerelease);
@@ -207,6 +402,8 @@ async function main() {
     `// Generated by scripts/fetch-release-version.mjs. Do not edit by hand.\nexport const latestReleaseVersion = ${JSON.stringify(version)};\n`,
   );
   console.log(`release version: ${version} (${source})`);
+
+  generateDownloadsSnapshot(releases, version);
 }
 
 main();
