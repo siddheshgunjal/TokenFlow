@@ -268,7 +268,7 @@ function Hero() {
             No telemetry
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="database" className="h-3.5 w-3.5 text-accent" />
+            <Icon name="database" className="h-3.5 w-3.5 text-cyan-500" />
             Local processing
           </span>
           <span className="inline-flex items-center gap-1.5">
@@ -456,7 +456,7 @@ function DemoSection() {
           </span>
           <span className="text-white/50">·</span>
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="database" className="h-3.5 w-3.5 text-accent" />
+            <Icon name="database" className="h-3.5 w-3.5 text-cyan-500" />
             Everything processed locally
           </span>
           <span className="text-white/50">·</span>
