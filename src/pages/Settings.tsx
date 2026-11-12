@@ -232,18 +232,15 @@ export function SettingsPage({ onSaved }: { onSaved: () => void }) {
   const baseUrl = `http://127.0.0.1:${form.proxyPort}`;
   const snippets = [
     {
-      id: "continue",
-      title: "Continue",
-      hint: "~/.continue/config.json",
+      id: "zed",
+      title: "Zed",
+      hint: "Zed settings.json",
       code: `{
-  "models": [
-    {
-      "title": "Ollama via TokenFlow",
-      "provider": "ollama",
-      "model": "llama3.2",
-      "apiBase": "${baseUrl}"
+  "language_models": {
+    "ollama": {
+      "api_url": "${baseUrl}"
     }
-  ]
+  }
 }`,
     },
     {
