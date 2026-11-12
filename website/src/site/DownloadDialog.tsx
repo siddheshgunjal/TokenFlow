@@ -194,8 +194,8 @@ export function DownloadDialog({
               tag={tag}
               assets={[
                 {
-                  label: "Apple Silicon (M-Series)",
-                  detail: "M1/M2/M3/M4 · .dmg",
+                  label: "Apple Silicon",
+                  detail: "M-Series · .dmg",
                   asset: downloads.macos.aarch64,
                 },
                 {

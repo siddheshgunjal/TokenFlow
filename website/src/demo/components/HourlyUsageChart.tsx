@@ -10,7 +10,7 @@ export interface HourlyChartSeries {
   values: number[];
 }
 
-const HOUR_LABELS = ["12am", "6am", "12pm", "6pm", "11.59pm"];
+const HOUR_LABELS = ["12am", "6am", "12pm", "6pm", "11:59pm"];
 
 /**
  * A plain-SVG hourly line/area chart, tailored to usage. A single series
@@ -34,11 +34,15 @@ export function HourlyUsageChart({
     [series],
   );
 
-  // A little headroom at the top so the highest dot is not clipped.
-  const TOP = 6;
+  // Reserve the top band for the X-axis label row. BalanceChart uses the same
+  // technique. The hourly plot is 140px tall at its minimum, so 22 viewBox units
+  // (~31px) keeps the peak and its 10px hover dot below the ~24px label row.
+  const TOP = 22;
   const toX = (hour: number) => (hour / 23) * 100;
   const toY = (value: number) =>
-    max > 0 ? 100 - (value / max) * (100 - TOP) : 100;
+    max > 0
+      ? Math.min(100, Math.max(TOP, 100 - (value / max) * (100 - TOP)))
+      : 100;
 
   const paths = useMemo(
     () =>
@@ -241,6 +245,8 @@ export function HourlyUsageChart({
 }
 
 function hourLabel(hour: number): string {
+  // The final bucket covers 11:00pm–11:59pm and matches the axis endpoint.
+  if (hour === 23) return "11:59pm";
   const period = hour < 12 ? "am" : "pm";
   const display = hour % 12 === 0 ? 12 : hour % 12;
   return `${display}${period}`;
