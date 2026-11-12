@@ -454,10 +454,16 @@ function DemoSection() {
             <Icon name="shield" className="h-3.5 w-3.5 text-success" />
             No data leaves your browser
           </span>
-          <span className="text-white/10">·</span>
-          <span>Same deterministic mock data as the desktop app</span>
-          <span className="text-white/10">·</span>
-          <span>No install or account required</span>
+          <span className="text-white/50">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="database" className="h-3.5 w-3.5 text-accent" />
+            Everything processed locally
+          </span>
+          <span className="text-white/50">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="terminal" className="h-3.5 w-3.5 text-accent" />
+            No install or account required
+          </span>
         </div>
       </div>
     </section>
