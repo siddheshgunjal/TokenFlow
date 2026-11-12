@@ -139,7 +139,11 @@ down immediately on hide, so this window is purely the core's UI-process
 working set. It then flushes the WAL, releases the single-instance D-Bus name,
 and `exec`s the same binary with `--recycled`. The
 replacement starts headless (no window, no `WebKitNetworkProcess`), re-binds
-the proxy and tray, and returns to the pre-webview footprint. Measured on the
+the proxy and tray, and returns to the pre-webview footprint. The status
+notifier always registers under the D-Bus unique connection name (the Flatpak
+path): `exec` keeps the PID, and `ksni`'s default well-known item name is
+PID-derived, so reusing that name leaves GNOME's AppIndicator extension with
+the old connection's cached item and the icon does not return. Measured on the
 GNOME 51 runtime: **167 MB while a warm UI process exists vs 75 MB after the
 re-exec**, with a 5 ms proxy rebind. Windows and macOS destroy webviews per
 close, so the re-exec is Linux-only.
@@ -198,7 +202,7 @@ Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique inde
 
 10. **Explicit Tauri capabilities** — Minimal capability set: show, hide, close, focus, drag, always-on-top, positioning, monitor size, shell-open, core events. Tray built in Rust, so no tray permission exposed to webview.
 
-11. **Platform-specific tray and widget lifecycle** — Windows/macOS native two-action menu (Show Widget, Quit). Linux `ksni` SNI with `Activate`, `SecondaryActivate`, DBusMenu. Double-click opens widget; single-click opens menu. Widget stores `(x, y)` activation hint and opens on the monitor owning the tray icon; does not use stale XWayland cursor position.
+11. **Platform-specific tray and widget lifecycle** — Windows/macOS native two-action menu (Show Widget, Quit). Linux `ksni` SNI with `Activate`, `SecondaryActivate`, DBusMenu, registered under the D-Bus unique connection name so every process image (including the PID-preserving idle recycle) is a fresh item. Double-click opens widget; single-click opens menu. Widget stores `(x, y)` activation hint and opens on the monitor owning the tray icon; does not use stale XWayland cursor position.
 
 12. **Explicit restart semantics** — `SettingsView.restart_required` compares desired settings with running proxy; UI shows restart banner. Other preferences (always-on-top) apply immediately; poll interval picked up on next worker cycle.
 
@@ -224,7 +228,7 @@ Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique inde
 
 23. **Optional heap accounting** — the `heap-stats` cargo feature installs a counting global allocator (`heap_stats.rs`) that tracks live bytes, peak bytes, and allocation calls, and logs them every 60s at debug level. It separates "the core's own heap grew" from "GTK/WebKit retained something" during long captures. It is off by default because it adds two atomic operations to every allocation; enable with `cargo run --features heap-stats` and `RUST_LOG=tokenflow=debug`.
 
-24. **Idle core recycle on Linux** — `recycle.rs` re-execs the process when every window has been hidden and the proxy has been quiet for `idle_recycle_secs` (default 60; `0` disables). Widget renderers are torn down immediately on hide, so this window only covers the core's UI-process library working set. This is the only supported way to release the GTK/WebKit/Mesa library working set that the first webview loads into the core process. The decision is gated on `webview_created`, `visible_windows == 0`, `proxy_activity.in_flight() == 0`, and the quiet window; `ProxyActivityGuard` is held for the whole streamed response, so a long Ollama generation can never be cut. The replacement is started with `--recycled` so it skips window creation, and `reap_inherited_children()` clears the pre-exec `WebKitNetworkProcess` before the new image starts WebKit children. `exec` (rather than spawn-and-exit) preserves the Flatpak sandbox and PID, and the proxy rebinds immediately. The WAL is checkpointed before the exec. The teardown and exec run on a plain OS thread, not the Tokio worker: `tauri_plugin_single_instance::destroy` releases the D-Bus name through a blocking zbus connection, which panics with "Cannot start a runtime from within a runtime" when invoked from a Tokio worker.
+24. **Idle core recycle on Linux** — `recycle.rs` re-execs the process when every window has been hidden and the proxy has been quiet for `idle_recycle_secs` (default 60; `0` disables). Widget renderers are torn down immediately on hide, so this window only covers the core's UI-process library working set. This is the only supported way to release the GTK/WebKit/Mesa library working set that the first webview loads into the core process. The decision is gated on `webview_created`, `visible_windows == 0`, `proxy_activity.in_flight() == 0`, and the quiet window; `ProxyActivityGuard` is held for the whole streamed response, so a long Ollama generation can never be cut. The replacement is started with `--recycled` so it skips window creation, and `reap_inherited_children()` clears the pre-exec `WebKitNetworkProcess` before the new image starts WebKit children. `exec` (rather than spawn-and-exit) preserves the Flatpak sandbox and PID, and the proxy rebinds immediately. The WAL is checkpointed before the exec. The tray always registers under the D-Bus unique connection name instead of `ksni`'s PID-derived well-known name: `exec` preserves the PID, and a host that still has the old item cached under that name (GNOME's AppIndicator extension resets it without rebinding the proxy) would drop the icon after the old connection closes; Flatpak also requires the unique name. The teardown and exec run on a plain OS thread, not the Tokio worker: `tauri_plugin_single_instance::destroy` releases the D-Bus name through a blocking zbus connection, which panics with "Cannot start a runtime from within a runtime" when invoked from a Tokio worker.
 
 ## Technology stack
 

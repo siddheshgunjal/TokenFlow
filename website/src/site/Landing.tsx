@@ -262,21 +262,21 @@ function Hero() {
           </a>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[13px] text-muted">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted">
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="shield" className="h-3.5 w-3.5 text-success" />
+            <Icon name="shield" className="h-5 w-5 text-success" />
             No telemetry
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="database" className="h-3.5 w-3.5 text-accent" />
+            <Icon name="database" className="h-5 w-5 text-cyan-500" />
             Local processing
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="key" className="h-3.5 w-3.5 text-warning" />
+            <Icon name="key" className="h-5 w-5 text-warning" />
             Keychain protection
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="terminal" className="h-3.5 w-3.5 text-accent" />
+            <Icon name="terminal" className="h-5 w-5 text-accent" />
             Built with Rust
           </span>
         </div>
@@ -449,15 +449,21 @@ function DemoSection() {
           <DemoEmbed />
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px] text-muted">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted">
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="shield" className="h-3.5 w-3.5 text-success" />
+            <Icon name="shield" className="h-5 w-5 text-success" />
             No data leaves your browser
           </span>
-          <span className="text-white/10">·</span>
-          <span>Same deterministic mock data as the desktop app</span>
-          <span className="text-white/10">·</span>
-          <span>No install or account required</span>
+          {/*<span className="text-white/50">·</span>*/}
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="database" className="h-5 w-5 text-cyan-500" />
+            Everything processed locally
+          </span>
+          {/*<span className="text-white/50">·</span>*/}
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="terminal" className="h-5 w-5 text-accent" />
+            No install or account required
+          </span>
         </div>
       </div>
     </section>
