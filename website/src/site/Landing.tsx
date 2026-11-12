@@ -165,24 +165,24 @@ function GettingStarted() {
   const steps = [
     {
       title: "Run Ollama",
-      description: "Ensure Ollama is running on `127.0.0.1:11434`.",
+      description: "Ensure Ollama is running on your machine at",
       code: "127.0.0.1:11434",
     },
     {
       title: "Launch TokenFlow",
       description:
-        "Launch TokenFlow and it will automatically proxy requests on `127.0.0.1:11435`.",
+        "Launch TokenFlow and it will automatically proxy requests on",
       code: "127.0.0.1:11435",
     },
     {
       title: "Configure clients",
-      description: "Point your Ollama clients at `http://127.0.0.1:11435`",
-      code: "http://127.0.0.1:11435/v1",
+      description: "Point your Local AI clients at",
+      code: "http://127.0.0.1:11435",
     },
     {
       title: "Send requests",
       description:
-        "Send completion requests - token counts appear in the dashboard after each stream.",
+        "Start sending requests to your Local AI clients and TokenFlow will capture the usage data.",
     },
   ];
 
