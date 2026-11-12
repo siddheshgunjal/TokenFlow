@@ -116,7 +116,6 @@ export function DayDetailPanel({
     let hours: HourlyUsage[];
     let series: HourlyChartSeries[];
     let scopeLabel: string;
-    let color: string;
 
     if (effective.kind === "all") {
       if (detail.models.length === 0) {
@@ -124,7 +123,6 @@ export function DayDetailPanel({
       }
       hours = detail.hours;
       scopeLabel = "All models";
-      color = ALL_COLOR;
       series = [
         {
           id: "all",
@@ -145,12 +143,11 @@ export function DayDetailPanel({
       }
       hours = entry!.hours;
       scopeLabel = effective.model;
-      color = colorForModel(modelColors, effective.model).hex;
       series = [
         {
           id: effective.model,
           label: effective.model,
-          color,
+          color: colorForModel(modelColors, effective.model).hex,
           values: entry!.hours.map((h) => h.totalTokens),
         },
       ];
@@ -161,7 +158,6 @@ export function DayDetailPanel({
       );
       hours = aggregateHourly(entries);
       scopeLabel = "Top 5 total";
-      color = ALL_COLOR;
       series = entries.map((model) => ({
         id: model.model,
         label: model.model,
@@ -175,7 +171,7 @@ export function DayDetailPanel({
       return { kind: "empty" };
     }
 
-    return renderScope(scopeLabel, color, hours, series);
+    return renderScope(scopeLabel, hours, series);
   }, [detail, effective, topFive, modelColors]);
 
   return (
@@ -253,7 +249,6 @@ export function DayDetailPanel({
 
 function renderScope(
   scopeLabel: string,
-  color: string,
   hours: HourlyUsage[],
   series: HourlyChartSeries[],
 ): ScopeRender {
@@ -276,7 +271,6 @@ function renderScope(
   return {
     kind: "data",
     scopeLabel,
-    color,
     series,
     hours,
     totalTokens,
@@ -331,13 +325,6 @@ function SummaryStrip({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
-      <span className="flex items-center gap-1.5 text-[12px] font-medium text-ink">
-        <span
-          className="h-2 w-2 rounded-full"
-          style={{ backgroundColor: scope.color }}
-        />
-        {scope.scopeLabel}
-      </span>
       <SummaryMetric label="Total" value={formatCompact(scope.totalTokens)} />
       <SummaryMetric
         label="New in"
@@ -384,7 +371,6 @@ type ScopeRender =
   | {
       kind: "data";
       scopeLabel: string;
-      color: string;
       series: HourlyChartSeries[];
       hours: HourlyUsage[];
       totalTokens: number;
