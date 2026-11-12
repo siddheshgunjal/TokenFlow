@@ -34,6 +34,7 @@ gpg_signing_normalize_armored() {
 #   GNUPGHOME
 #   GPG_SIGNING_KEY
 #   GPG_SIGNING_PASSPHRASE_FILE
+#   GPG_SIGNING_PUBLIC_KEY_ASC
 #   GPG_SIGNING_PUBLIC_KEY_BIN
 gpg_signing_setup() {
   local root="$1"
@@ -155,8 +156,11 @@ EOF
     fi
   fi
 
+  gpg --batch --homedir "$GNUPGHOME" --armor --export "$GPG_SIGNING_KEY" \
+    > "$GPG_SIGNING_WORKDIR/public-key.asc"
   gpg --batch --homedir "$GNUPGHOME" --export "$GPG_SIGNING_KEY" \
     > "$GPG_SIGNING_WORKDIR/public-key.gpg"
+  export GPG_SIGNING_PUBLIC_KEY_ASC="$GPG_SIGNING_WORKDIR/public-key.asc"
   export GPG_SIGNING_PUBLIC_KEY_BIN="$GPG_SIGNING_WORKDIR/public-key.gpg"
   export GPG_SIGNING_PASSPHRASE_FILE="$passphrase_file"
 

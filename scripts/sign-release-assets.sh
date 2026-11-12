@@ -81,7 +81,7 @@ verify_rpm_signature() {
     echo "warning: could not create a temporary rpmdb; skipping embedded RPM signature verification for $file" >&2
     return 0
   fi
-  rpm --dbpath "$rpmdb" --import "$GPG_SIGNING_PUBLIC_KEY_BIN" >/dev/null
+  rpm --dbpath "$rpmdb" --import "$GPG_SIGNING_PUBLIC_KEY_ASC" >/dev/null
 
   check_output="$(rpm --dbpath "$rpmdb" --checksig "$file" 2>&1)" || {
     printf '%s\n' "$check_output" >&2
@@ -103,11 +103,23 @@ for file in "${FILES[@]}"; do
         exit 1
       fi
       echo "adding native RPM signature: $file"
-      rpmsign \
-        --define "_gpg_name $GPG_SIGNING_KEY" \
-        --define "_openpgp_sign_id $GPG_SIGNING_KEY" \
-        --define "_gpg_sign_cmd_extra_args --batch --no-tty --pinentry-mode loopback --passphrase-file \"$GPG_SIGNING_PASSPHRASE_FILE\"" \
-        --addsign "$file"
+      rpm_major="$(rpm --version | awk '{print $3}' | cut -d. -f1)"
+      case "$rpm_major" in
+        ''|*[!0-9]*) rpm_major=0 ;;
+      esac
+      if [ "$rpm_major" -ge 6 ]; then
+        rpmsign \
+          --define "_gpg_name $GPG_SIGNING_KEY" \
+          --define "_openpgp_sign_id $GPG_SIGNING_KEY" \
+          --define "_gpg_sign_cmd_extra_args --batch --no-tty --pinentry-mode loopback --passphrase-file \"$GPG_SIGNING_PASSPHRASE_FILE\"" \
+          --addsign "$file"
+      else
+        gpg_bin="$(command -v gpg)"
+        rpmsign \
+          --define "_gpg_name $GPG_SIGNING_KEY" \
+          --define "__gpg_sign_cmd \"$gpg_bin\" --batch --no-tty --pinentry-mode loopback --passphrase-file \"$GPG_SIGNING_PASSPHRASE_FILE\" --no-verbose --no-armor --no-secmem-warning -u \"%{_gpg_name}\" -sbo \"%{__signature_filename}\" -- \"%{__plaintext_filename}\"" \
+          --addsign "$file"
+      fi
       verify_rpm_signature "$file"
       ;;
   esac
