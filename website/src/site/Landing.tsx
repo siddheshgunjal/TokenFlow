@@ -516,13 +516,13 @@ function MemorySection() {
             Memory
           </p>
           <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Unlike Electron
-            <span className="block">TokenFlow stays put.</span>
+            Unlike other tools,
+            <span className="block">TokenFlow stays put</span>
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
             Browser and Electron-based tools can open around 300 MB and climb
-            toward 800 as you keep working. TokenFlow is built with Rust and
-            stays near 60 MB in the background.
+            toward 800 as you keep working. TokenFlow is built with Rust for a
+            small footprint and lower memory overhead
           </p>
         </div>
 
@@ -620,18 +620,18 @@ function HowItWorks() {
     {
       title: "Point your client at the proxy",
       description:
-        "Launch TokenFlow, then use the loopback proxy URL in Cursor, Continue, Cline, or any Ollama client.",
+        "When TokenFlow is running, use the loopback proxy URL in any of your Local AI clients",
       code: "http://127.0.0.1:11435",
     },
     {
       title: "Keep working as usual",
       description:
-        "Requests pass through unchanged to Ollama. TokenFlow records the response stream without modifying it.",
+        "Requests pass through unchanged to Ollama. TokenFlow records the response stream without modifying it",
     },
     {
       title: "Watch the dashboard fill in",
       description:
-        "Totals, model breakdowns, cache rates, and day-level charts update as your requests complete.",
+        "Totals, model breakdowns, cache rates, and day-level charts update as your requests complete",
     },
   ];
 
