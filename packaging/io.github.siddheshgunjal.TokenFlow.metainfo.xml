@@ -95,6 +95,7 @@
     <binary>tokenflow</binary>
   </provides>
   <releases>
+    <release version="0.1.0" date="2026-11-12"/>
     <release version="0.1.0+alpha.3" date="2026-11-11" />
     <release version="0.1.0+alpha.2" date="2026-11-09" />
     <release version="0.1.0+alpha.1" date="2026-11-06" />

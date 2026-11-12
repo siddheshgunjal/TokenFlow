@@ -1,7 +1,7 @@
 {
   "name": "tokenflow",
   "private": true,
-  "version": "0.1.0+alpha.3",
+  "version": "0.1.0",
   "type": "module",
   "description": "Local-first desktop analytics for Ollama and DeepSeek usage",
   "author": "Siddhesh Gunjal",
