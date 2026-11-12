@@ -63,6 +63,12 @@ flatpak/build/
 flatpak/repo/
 flatpak/.state/
 
+# Ephemeral GPG signing home (scripts/lib/gpg.sh)
+.gpg-signing.*
+
+# Generated release key embedded into Linux bundles
+src-tauri/tokenflow-release-key.asc
+
 # internal docs
 docs/perf/
 
