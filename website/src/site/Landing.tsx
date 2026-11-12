@@ -273,11 +273,11 @@ function Hero() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="key" className="h-3.5 w-3.5 text-warning" />
-            Keychain-backed
+            Keychain protection
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="terminal" className="h-3.5 w-3.5 text-accent" />
-            Rust · ~60 MB
+            Built with Rust
           </span>
         </div>
 
@@ -473,7 +473,7 @@ function FeatureSection() {
             Features
           </p>
           <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Understand the real cost of every prompt.
+            Understand your Local AI usage at a glance
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
             TokenFlow turns raw request logs into the numbers that matter:
@@ -771,8 +771,7 @@ function DownloadSection({
 
         <p className="mt-6 text-center text-sm leading-5 text-muted/70">
           All releases are built from source on GitHub. See the release page for
-          checksums and notes. The picker always serves the latest release
-          assets.
+          checksums and notes.
         </p>
       </div>
     </section>
