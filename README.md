@@ -64,6 +64,10 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 | Windows | `.exe` | `x86_64`, `aarch64` |
 | macOS | `.dmg` | `x86_64`, `aarch64` |
 
+## 🔐 Verify downloads
+
+Want to verify the integrity of your download? Each release includes a `SHA256SUMS` manifest and a `SHA256SUMS.asc` signature. The public key used to sign the manifest is embedded in Linux bundles at `/usr/share/keyrings/tokenflow-release-key.asc`. See [RELEASING.md](RELEASING.md#release-signing) for the verification procedure.
+
 ## 🚀 Getting Started
 
 1. Ensure Ollama is running on `127.0.0.1:11434`

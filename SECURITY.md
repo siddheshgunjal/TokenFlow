@@ -39,6 +39,11 @@ This policy covers:
 - Keychain migration (legacy SQLite to OS keychain with read-back verification)
 - Release artifacts (bundle formats, signatures, checksums)
 
+Linux release assets embed the release public key at
+`/usr/share/keyrings/tokenflow-release-key.asc`, and every build asset is
+covered by the `SHA256SUMS` manifest signed as `SHA256SUMS.asc`. See
+[RELEASING.md](RELEASING.md#release-signing) for the verification procedure.
+
 ## Links
 
 - Security model details: [[ARCHITECTURE.md#security-and-privacy-model]]

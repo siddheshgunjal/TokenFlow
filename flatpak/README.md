@@ -59,7 +59,13 @@ npm run bundle:flatpak
 1. runs `version:sync` and reads `VERSION`;
 2. rejects unsupported host architectures;
 3. builds with `flatpak-builder` from the worktree manifest;
-4. writes `release/TokenFlow-<version>-linux-<arch>.flatpak`.
+4. writes `release/TokenFlow-<version>-linux-<arch>.flatpak`;
+5. signs the bundle and embeds the release public key when `GPG_PRIVATE_KEY` is set.
+
+In CI, the build and signing steps are separate: the build creates
+`flatpak/repo`, then `--sign-only` re-exports the bundle with the signature and
+embedded key. This keeps the private key out of the long `flatpak-builder`
+step.
 
 The worktree manifest uses the local source directory, runs `npm ci` and
 `cargo` with network access during the build, and is intended for local
@@ -90,12 +96,18 @@ CI runs `npm run flatpak:sources:check` on every pull request. It fails when
 ## Install and run
 
 ```bash
-flatpak install --user ./release/TokenFlow-0.1.0+alpha.1-linux-x86_64.flatpak
+flatpak install --user --bundle ./release/TokenFlow-0.1.0+alpha.1-linux-x86_64.flatpak
 flatpak run io.github.siddheshgunjal.TokenFlow
 ```
 
 The bundle `--runtime-repo` points at Flathub, but the runtime itself is not
 embedded. Flatpak downloads `org.gnome.Platform//51` if it is missing.
+
+Release bundles are signed with the TokenFlow release GPG key and embed the
+public key in their signing metadata; `flatpak install --bundle` verifies it.
+The release as a whole is covered by the `SHA256SUMS` manifest signed as
+`SHA256SUMS.asc`, described in
+[packaging/README.md](../packaging/README.md#verifying-release-signatures).
 
 ---
 

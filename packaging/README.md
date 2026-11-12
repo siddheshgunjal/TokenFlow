@@ -13,9 +13,16 @@ work locally when the matching toolchain is available.
 | Windows | `.exe` | `x86_64`, `aarch64` | `TokenFlow-<version>-windows-x86_64-setup.exe` |
 | macOS | `.dmg` | `x86_64`, `aarch64` | `TokenFlow-<version>-macos-x86_64.dmg` |
 
-Every release also publishes `SHA256SUMS`. DEB and RPM keep their native
-internal architecture names (`amd64`, `arm64`, `x86_64`, `aarch64`); only the
-asset filename is normalized.
+Every release publishes `SHA256SUMS` and `SHA256SUMS.asc`. DEB and RPM keep
+their native internal architecture names (`amd64`, `arm64`, `x86_64`,
+`aarch64`); only the asset filename is normalized.
+
+Linux release assets embed the TokenFlow release public key at
+`/usr/share/keyrings/tokenflow-release-key.asc` (inside an AppImage, the path is
+`usr/share/keyrings/tokenflow-release-key.asc` in the AppDir). RPM and Flatpak
+bundles also carry native signatures, and `SHA256SUMS.asc` signs the checksum
+manifest that covers every build asset. See
+[Verifying release signatures](#verifying-release-signatures).
 
 The Linux package baseline is **Ubuntu 22.04, Debian 12, and Fedora 38+**.
 Tauri bundles on Ubuntu 22.04 in CI so the released binaries link against
@@ -183,7 +190,7 @@ install the local bundle:
 flatpak remote-add --user --if-not-exists flathub \
   https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak install --user flathub org.gnome.Platform//51
-flatpak install --user ./release/TokenFlow-0.1.0-linux-x86_64.flatpak
+flatpak install --user --bundle ./release/TokenFlow-0.1.0-linux-x86_64.flatpak
 flatpak run io.github.siddheshgunjal.TokenFlow
 ```
 
@@ -225,13 +232,71 @@ release notes.
 
 ---
 
+### Verifying release signatures
+
+Release assets are covered by `SHA256SUMS.asc`, a detached signature over
+`SHA256SUMS`. The release public key is embedded in every Linux build; there is
+no separate key download.
+
+Extract the key from any Linux build:
+
+```bash
+# DEB
+dpkg-deb -x TokenFlow-<version>-linux-x86_64.deb ./tokenflow-deb
+cp ./tokenflow-deb/usr/share/keyrings/tokenflow-release-key.asc .
+
+# RPM
+mkdir -p tokenflow-rpm
+(cd tokenflow-rpm && rpm2cpio ../TokenFlow-<version>-linux-x86_64.rpm | cpio -idmv)
+find tokenflow-rpm -name tokenflow-release-key.asc -exec cp {} . \;
+
+# AppImage
+chmod +x TokenFlow-<version>-linux-x86_64.AppImage
+./TokenFlow-<version>-linux-x86_64.AppImage --appimage-extract \
+  usr/share/keyrings/tokenflow-release-key.asc
+cp squashfs-root/usr/share/keyrings/tokenflow-release-key.asc .
+```
+
+Import the key and confirm its fingerprint out-of-band before trusting a
+download:
+
+```bash
+gpg --import tokenflow-release-key.asc
+gpg --show-keys --with-fingerprint tokenflow-release-key.asc
+```
+
+Verify the signed checksum manifest, then every downloaded file:
+
+```bash
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+Native verification:
+
+```bash
+# RPM (embedded signature)
+sudo rpm --import tokenflow-release-key.asc
+rpm --checksig TokenFlow-<version>-linux-x86_64.rpm
+
+# Flatpak (embedded OSTree signature and embedded key)
+flatpak install --user --bundle ./TokenFlow-<version>-linux-x86_64.flatpak
+```
+
+`.deb` and AppImage do not have a standard per-file embedded signature; the
+signed checksum manifest is their signature.
+
+---
+
 ### Platform caveats
 
 | Topic | Current behavior | Follow-up |
 | --- | --- | --- |
 | macOS signing | Ad-hoc signature (`APPLE_SIGNING_IDENTITY=-`), no notarization | Add Developer ID signing and notarization when certificates exist |
 | Windows signing | Unsigned installer | Add an OV/EV certificate; SmartScreen reputation builds over time |
-| RPM signing | Unsigned package | Sign releases with a repository GPG key if an RPM repository is added |
+| RPM signing | Signed with the release GPG key; the key is embedded at `/usr/share/keyrings/tokenflow-release-key.asc`; verify with `rpm --checksig` | Keep the release key current and publish its fingerprint out-of-band |
+| DEB/AppImage signing | Public key embedded at `/usr/share/keyrings/tokenflow-release-key.asc`; no standard per-file embedded signature; integrity covered by `SHA256SUMS.asc` | None; verify the signed checksum manifest |
+| Flatpak signing | Native OSTree signature with the embedded release key | None; `flatpak install --bundle` verifies it |
 | AppImage | Built in CI; not locally validated on Fedora | Validate on Ubuntu 22.04 and Fedora before advertising |
 | DEB | Built in CI; not locally validated on Fedora | Validate on Debian 12 and Ubuntu 22.04 |
 | Linux ARM64 | Built on native ARM runners | Validate on Fedora Asahi / Raspberry Pi OS 64-bit if available |
