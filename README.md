@@ -19,10 +19,13 @@ Local-first desktop analytics for Ollama and DeepSeek usage
 <div align="center">
 
 ![CI](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/ci.yml?style=for-the-badge&logo=checkmarx&label=CI)
-![Build](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/release.yml?style=for-the-badge&logo=build&label=Build)
-![Dev Build](https://img.shields.io/github/v/release/siddheshgunjal/TokenFlow?include_prereleases&style=for-the-badge&label=Dev%20build)
-
+![Build](https://img.shields.io/github/actions/workflow/status/siddheshgunjal/TokenFlow/release.yml?style=for-the-badge&logo=github&label=Build)
 [<img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Ftoken-flow.xyz%2F&style=for-the-badge&logo=htmx">][website]
+
+
+![GitHub Release](https://img.shields.io/github/v/release/siddheshgunjal/TokenFlow?style=for-the-badge&label=Stable%20Build&color=%2300A896)
+[<img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/siddheshgunjal/TokenFlow/total?style=for-the-badge&logo=rolldown&logoColor=%232F6BFF&color=%232F6BFF">][latest_release]
+
 
 </div>
 
@@ -53,7 +56,7 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 
 ## 📦 Install
 
-- [GitHub Releases](https://github.com/siddheshgunjal/TokenFlow/releases/latest) for the latest binary
+- [GitHub Releases][latest_release] for the latest binary
 
 | Platform | Format | Architectures |
 | --- | --- | --- |
@@ -63,10 +66,6 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 | Linux | AppImage | `x86_64`, `aarch64` |
 | Windows | `.exe` | `x86_64`, `aarch64` |
 | macOS | `.dmg` | `x86_64`, `aarch64` |
-
-## 🔐 Verify downloads
-
-Want to verify the integrity of your download? Each release includes a `SHA256SUMS` manifest and a `SHA256SUMS.asc` signature. The public key used to sign the manifest is embedded in Linux bundles at `/usr/share/keyrings/tokenflow-release-key.asc`. See [RELEASING.md](RELEASING.md#release-signing) for the verification procedure.
 
 ## 🚀 Getting Started
 
@@ -98,8 +97,8 @@ Want to verify the integrity of your download? Each release includes a `SHA256SU
 - [ARCHITECTURE.md](ARCHITECTURE.md) — full system design with all 15 design decisions
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guidelines, development setup, coding standards, PR process
 - [RELEASING.md](RELEASING.md) — release process, versioning, checklist, GitHub Actions workflow
-- [packaging/README.md](packaging/README.md) — per-format build and install instructions
-- [flatpak/README.md](flatpak/README.md) — Flatpak build, sandbox permissions, test matrix
+- [Packaging Guide](packaging/README.md) — per-format build and install instructions
+- [Flatpak Guide](flatpak/README.md) — Flatpak build, sandbox permissions, test matrix
 
 ## 🤝 Contributing
 
@@ -113,3 +112,4 @@ Want to verify the integrity of your download? Each release includes a `SHA256SU
 GPL-3.0-only. See [LICENSE](LICENSE) for full text.
 
 [website]: https://token-flow.xyz/
+[latest_release]: https://github.com/siddheshgunjal/TokenFlow/releases/latest
