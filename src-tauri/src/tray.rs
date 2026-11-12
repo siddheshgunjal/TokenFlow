@@ -178,15 +178,17 @@ mod linux {
     }
 
     pub(super) fn create(app: &AppHandle) -> tauri::Result<TrayMenu> {
-        let flatpak = crate::platform::is_flatpak();
-
         let service = TokenFlowTray {
             app: app.clone(),
             last_anchor: None,
         }
-        // A sandbox cannot own the process-derived well-known name. Falling
-        // back to the unique connection name is the supported Flatpak path.
-        .disable_dbus_name(flatpak)
+        // Always register under the unique connection name. Flatpak cannot own
+        // the process-derived well-known name, and a recycled process keeps its
+        // PID (`exec`), so `ksni`'s PID-derived name would collide with the
+        // item a host still has cached. GNOME's AppIndicator extension resets
+        // such an item without rebinding its proxy and then drops the icon.
+        // A unique name gives every process image a fresh SNI identity.
+        .disable_dbus_name(true)
         // Start even if the AppIndicator extension is not running yet; the
         // service reconnects when the watcher appears.
         .assume_sni_available(true)
