@@ -167,10 +167,12 @@ Do **not** add:
 - `--filesystem=xdg-config/autostart`: the Background portal writes the host
   login entry; the sandbox itself never touches `~/.config/autostart`.
 
-`tray.rs` uses `ksni` directly. Inside Flatpak it calls
-`disable_dbus_name(true)`: the sandbox cannot own the process-derived
-`org.kde.StatusNotifierItem-<pid>-<id>` name, so `ksni` registers with the
-host watcher under its unique connection name. That is the same supported
+`tray.rs` uses `ksni` directly. It calls `disable_dbus_name(true)` on every
+Linux launch, so `ksni` registers with the host watcher under its unique
+connection name. Inside Flatpak this is required because the sandbox cannot
+own the process-derived `org.kde.StatusNotifierItem-<pid>-<id>` name; outside
+it, the same path keeps the idle re-exec (which preserves the PID) from
+colliding with an item the host still has cached. That is the same supported
 pattern Qt applications use, and the host can still call `Activate`, read
 properties, and open the DBusMenu.
 
