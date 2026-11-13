@@ -25,8 +25,8 @@ Options:
   --release             Use the tag-pinned release manifest (requires generated
                         flatpak-cargo-sources.json and node-sources.json)
   --manifest <path>     Override the manifest path
-  --sign-only           Re-export the existing flatpak/repo bundle with the
-                        release signature (requires a private key below)
+  --sign-only           Sign the existing flatpak/repo commit and re-export
+                        the bundle (requires a private key below)
   -h, --help            Show this help
 
 Environment:
@@ -114,9 +114,21 @@ BUNDLE_ARGS=(
 
 if [ "$SIGNING" -eq 1 ]; then
   gpg_signing_setup "$ROOT"
+
+  # `flatpak build-bundle --gpg-sign` only signs OCI images. A .flatpak bundle
+  # is verified through the GPG signature on the OSTree commit, so sign the
+  # commit in the repo before bundling. Embedding the public key without this
+  # signature makes `flatpak install --bundle` fail with "GPG verification
+  # enabled, but no signatures found".
+  flatpak build-sign \
+    --arch="$ARCH" \
+    --gpg-sign="$GPG_SIGNING_KEY" \
+    --gpg-homedir="$GNUPGHOME" \
+    "$REPO_DIR" \
+    io.github.siddheshgunjal.TokenFlow \
+    stable
+
   BUNDLE_ARGS+=(
-    --gpg-sign="$GPG_SIGNING_KEY"
-    --gpg-homedir="$GNUPGHOME"
     --gpg-keys="$GPG_SIGNING_PUBLIC_KEY_BIN"
   )
 fi

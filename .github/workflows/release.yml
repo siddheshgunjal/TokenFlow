@@ -324,6 +324,13 @@ jobs:
           GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
         run: bash scripts/build-flatpak.sh --sign-only
 
+      - name: Verify the signed bundle installs
+        shell: bash
+        run: |
+          export FLATPAK_USER_DIR="$(mktemp -d)"
+          flatpak install --user --bundle --noninteractive --no-deps release/*.flatpak
+          flatpak list --user --app --columns=application | grep -qx io.github.siddheshgunjal.TokenFlow
+
       - uses: actions/upload-artifact@v4
         with:
           name: flatpak-${{ matrix.arch }}
