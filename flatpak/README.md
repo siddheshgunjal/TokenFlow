@@ -60,12 +60,18 @@ npm run bundle:flatpak
 2. rejects unsupported host architectures;
 3. builds with `flatpak-builder` from the worktree manifest;
 4. writes `release/TokenFlow-<version>-linux-<arch>.flatpak`;
-5. signs the bundle and embeds the release public key when `GPG_PRIVATE_KEY` is set.
+5. signs the OSTree commit and embeds the release public key when
+   `GPG_PRIVATE_KEY` is set.
 
 In CI, the build and signing steps are separate: the build creates
-`flatpak/repo`, then `--sign-only` re-exports the bundle with the signature and
-embedded key. This keeps the private key out of the long `flatpak-builder`
-step.
+`flatpak/repo`, then `--sign-only` signs the commit in that repo with
+`flatpak build-sign`, embeds the public key, and re-exports the bundle. This
+keeps the private key out of the long `flatpak-builder` step.
+
+`flatpak build-bundle --gpg-sign` only applies to OCI images, so it cannot sign
+a `.flatpak` bundle. The commit signature must be added to the repo before
+bundling; a bundle that embeds a key but has an unsigned commit fails with
+"GPG verification enabled, but no signatures found".
 
 The worktree manifest uses the local source directory, runs `npm ci` and
 `cargo` with network access during the build, and is intended for local
