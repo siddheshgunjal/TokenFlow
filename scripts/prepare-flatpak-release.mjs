@@ -49,6 +49,7 @@ const version = argument("--version", readVersion());
 const tag = argument("--tag", `v${version}`);
 const date = new Date().toISOString().slice(0, 10);
 const renderFlathub = process.argv.includes("--render-flathub");
+const isStableVersion = /^\d+\.\d+\.\d+$/.test(version);
 
 if (!/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$/.test(version)) {
   console.error(`invalid version: ${version}`);
@@ -64,24 +65,49 @@ manifest = manifest.replace(/^(\s*tag:\s*)v\S+/m, `$1${tag}`);
 fs.writeFileSync(MANIFEST, manifest);
 
 let metainfo = fs.readFileSync(METAINFO, "utf8");
-if (!metainfo.includes(`<release version="${version}"`)) {
-  const release = `    <release version="${version}" date="${date}"/>`;
-  if (/<releases\s*\/>/.test(metainfo)) {
-    metainfo = metainfo.replace(
-      /<releases\s*\/>/,
-      `<releases>\n${release}\n  </releases>`,
-    );
-  } else if (/<releases>/.test(metainfo)) {
-    metainfo = metainfo.replace(
-      /<releases>\s*/,
-      `<releases>\n${release}\n    `,
-    );
-  } else {
-    metainfo = metainfo.replace(
-      "</component>",
-      `  <releases>\n${release}\n  </releases>\n</component>`,
-    );
+let metainfoChanged = false;
+
+if (isStableVersion) {
+  // AppStream compares version strings directly, so 0.1.0+alpha.3 sorts above
+  // 0.1.0. Keep the release list stable-only to avoid releases-not-in-order.
+  const withoutPrereleases = metainfo.replace(
+    /<releases>([\s\S]*?)<\/releases>/,
+    (_match, body) => {
+      const filtered = body
+        .split("\n")
+        .filter((line) => !/<release\b[^>]*version="[^"]*[-+][^"]*"/.test(line))
+        .join("\n");
+      return `<releases>${filtered}</releases>`;
+    },
+  );
+  if (withoutPrereleases !== metainfo) {
+    metainfo = withoutPrereleases;
+    metainfoChanged = true;
   }
+
+  if (!metainfo.includes(`<release version="${version}"`)) {
+    const release = `    <release version="${version}" date="${date}"/>`;
+    if (/<releases\s*\/>/.test(metainfo)) {
+      metainfo = metainfo.replace(
+        /<releases\s*\/>/,
+        `<releases>\n${release}\n  </releases>`,
+      );
+    } else if (/<releases>/.test(metainfo)) {
+      metainfo = metainfo.replace(
+        /<releases>\s*/,
+        `<releases>\n${release}\n    `,
+      );
+    } else {
+      metainfo = metainfo.replace(
+        "</component>",
+        `  <releases>\n${release}\n  </releases>\n</component>`,
+      );
+    }
+    metainfoChanged = true;
+  }
+}
+
+if (metainfoChanged) {
   fs.writeFileSync(METAINFO, metainfo);
 }
 
