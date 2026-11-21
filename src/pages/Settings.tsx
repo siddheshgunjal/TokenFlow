@@ -6,7 +6,10 @@ import {
   type ReactNode,
 } from "react";
 
+import packageJson from "../../package.json";
+
 import { Icon, type IconName } from "../components/Icons";
+import { Logo } from "../components/Logo";
 import {
   clearUsageData,
   copyText,
@@ -19,6 +22,13 @@ import {
 } from "../lib/api";
 import { formatRelative } from "../lib/format";
 import type { DeepSeekStatus, Settings, SettingsView } from "../lib/types";
+
+// About/Support metadata. `package.json` is kept in sync with the root VERSION
+// file by `npm run version:sync`, so it is the single source for the version.
+const APP_VERSION = packageJson.version;
+const WEBSITE_URL = packageJson.homepage;
+const REPOSITORY_URL = packageJson.repository.url.replace(/\.git$/, "");
+const NEW_ISSUE_URL = `${packageJson.bugs.url}/new?template=bug_report.yml`;
 
 export function SettingsPage({ onSaved }: { onSaved: () => void }) {
   const [view, setView] = useState<SettingsView | null>(null);
@@ -60,6 +70,10 @@ export function SettingsPage({ onSaved }: { onSaved: () => void }) {
     setForm((current) =>
       current ? ({ ...current, [key]: value } as Settings) : current,
     );
+  }
+
+  function openLink(url: string) {
+    void openExternal(url).catch((err) => setError(String(err)));
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -624,7 +638,7 @@ Model: llama3.2`,
         </Section>
 
         <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
-          <p className="text-[11px] leading-relaxed text-slate-500">
+          <p className="text-xs leading-relaxed text-slate-500">
             Proxy port and upstream changes require an app restart. Other
             preferences are applied when you save.
           </p>
@@ -637,14 +651,14 @@ Model: llama3.2`,
 
       <section className="card border-danger/15 p-5">
         <div className="flex items-start gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger ring-1 ring-danger/20">
-            <Icon name="trash" />
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger ring-1 ring-danger/20 self-center">
+            <Icon name="trash" className="h-6 w-6" />
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-slate-200">
               Danger zone
             </h2>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            <p className="mt-1 text-sm leading-relaxed text-slate-500">
               Delete all locally recorded Ollama usage and DeepSeek balance
               history. Your settings and API keys are kept.
             </p>
@@ -653,12 +667,78 @@ Model: llama3.2`,
             type="button"
             onClick={() => void handleClear()}
             disabled={clearing}
-            className="btn-danger shrink-0"
+            className="btn-danger shrink-0 self-center"
           >
             <Icon name="trash" className="h-3.5 w-3.5" />
             {clearing ? "Clearing…" : "Clear usage data"}
           </button>
         </div>
+      </section>
+
+      <section className="card p-5">
+        <div className="flex items-start gap-3">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-slate-400 ring-1 ring-white/[0.06] self-center">
+            <Icon name="alert" className="h-6 w-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-slate-200">Support</h2>
+            <p className="mt-1 text-sm leading-relaxed text-slate-500">
+              Found a bug or hit a problem? Open an issue on GitHub and include
+              your version and the steps to reproduce.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openLink(NEW_ISSUE_URL)}
+            className="btn-primary shrink-0 self-center"
+          >
+            <Icon name="external" className="h-4 w-4" />
+            Report a Problem
+          </button>
+        </div>
+      </section>
+
+      <section className="card p-5">
+        <div className="flex flex-wrap items-start gap-3 border-b border-white/[0.05] pb-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/[0.04] ring-1 ring-white/[0.06] self-center">
+            <Logo className="h-10 w-10" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-200">
+                About TokenFlow
+              </h2>
+              <span className="chip shrink-0 tabular-nums">v{APP_VERSION}</span>
+            </div>
+            <p className="mt-1 text-sm leading-relaxed text-slate-500">
+              Local-first desktop analytics for Ollama and DeepSeek usage.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 self-center">
+            <button
+              type="button"
+              onClick={() => openLink(WEBSITE_URL)}
+              className="btn-secondary border-accent/25 text-accent hover:bg-accent/10"
+            >
+              <Icon name="external" className="h-3.5 w-3.5" />
+              Website
+            </button>
+            <button
+              type="button"
+              onClick={() => openLink(REPOSITORY_URL)}
+              className="btn-secondary border-accent/25 text-accent hover:bg-accent/10"
+            >
+              <Icon name="external" className="h-3.5 w-3.5" />
+              GitHub
+            </button>
+          </div>
+        </div>
+
+        <p className="mt-4 text-xs leading-relaxed text-slate-500">
+          Your usage data stays on this device. TokenFlow records Ollama
+          telemetry through the local proxy and only contacts api.deepseek.com
+          when a key is configured.
+        </p>
       </section>
     </div>
   );
@@ -680,8 +760,8 @@ function Section({
   return (
     <section className="card p-5">
       <div className="flex items-start gap-3 border-b border-white/[0.05] pb-4">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-slate-400 ring-1 ring-white/[0.06]">
-          <Icon name={icon} />
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-slate-400 ring-1 ring-white/[0.06] self-center">
+          <Icon name={icon} className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-slate-200">{title}</h2>
@@ -751,7 +831,7 @@ function SettingsSkeleton() {
       {[0, 1, 2].map((index) => (
         <div key={index} className="card p-5">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-white/[0.05]" />
+            <div className="h-12 w-12 rounded-xl bg-white/[0.05]" />
             <div className="space-y-2">
               <div className="h-3 w-28 rounded bg-white/[0.06]" />
               <div className="h-2.5 w-64 rounded bg-white/[0.04]" />
