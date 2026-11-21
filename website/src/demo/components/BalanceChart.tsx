@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { getBalanceHistory } from "../lib/api";
 import { formatMoney, parseDateKey } from "../lib/format";
@@ -165,6 +173,7 @@ export function BalanceChart({
   const [hoverPoint, setHoverPoint] = useState<SeriesPoint | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number>(-1);
   const plotRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const calendarDay = new Date().toDateString();
 
   const bounds = useMemo(
@@ -173,6 +182,42 @@ export function BalanceChart({
   );
   const since = Math.floor(bounds.since.getTime() / 1000);
   const until = Math.floor(bounds.until.getTime() / 1000);
+
+  // The hover tooltip is portaled to `document.body`, so the viewBox
+  // percentages are measured from the viewport, not the plot. Resolve the
+  // hovered point to absolute viewport pixels so the card sits exactly above
+  // it (left edge on the point, no horizontal shift).
+  const tooltipPx = useMemo(() => {
+    if (hover === null || hoverPoint === null) return null;
+    const ref = plotRef.current?.getBoundingClientRect();
+    if (!ref) return null;
+    return {
+      left: ref.left + (hover.xPct / 100) * ref.width,
+      top: ref.top + (hover.yPct / 100) * ref.height,
+    };
+  }, [hover, hoverPoint]);
+
+  // Position the portaled tooltip imperatively in a layout effect. This runs
+  // after the DOM is committed but before the browser paints, so the clamped
+  // position is the only one the user ever sees. Deriving `left` from measured
+  // width during render left a stale-width frame that overflowed while sweeping
+  // left → right; measuring here removes that race entirely.
+  useLayoutEffect(() => {
+    const node = tooltipRef.current;
+    if (!node || tooltipPx === null) return;
+    // `clientWidth` excludes the scrollbar, which is the correct bound for a
+    // position:fixed element. Fall back to innerWidth if unavailable.
+    const viewportWidth =
+      document.documentElement.clientWidth || window.innerWidth;
+    const width = node.offsetWidth;
+    if (width > 0) {
+      const maxLeft = Math.max(8, viewportWidth - 8 - width);
+      node.style.left = `${Math.min(Math.max(8, tooltipPx.left), maxLeft)}px`;
+    } else {
+      node.style.left = `${tooltipPx.left}px`;
+    }
+    node.style.top = `${tooltipPx.top}px`;
+  }, [tooltipPx]);
 
   useEffect(() => {
     let cancelled = false;
@@ -403,29 +448,28 @@ export function BalanceChart({
               />
             ) : null}
 
-            {hover && hoverPoint ? (
-              <div
-                className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-white/10 bg-[#0b1220]/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm"
-                style={{
-                  left: `${Math.max(12, Math.min(hover.xPct, 88))}%`,
-                  top: `${hover.yPct}%`,
-                  marginTop: "-8px",
-                }}
-              >
-                <p className="whitespace-nowrap text-[11px] font-semibold text-white tabular-nums">
-                  {formatMoney(hoverPoint.value.toFixed(2), currency)}
-                </p>
-                <p className="whitespace-nowrap text-[10px] text-muted">
-                  {formatPointTime(hoverPoint.at, range)}
-                  {hoverDelta !== null
-                    ? ` · ${hoverDelta >= 0 ? "+" : "-"}${formatMoney(
-                        Math.abs(hoverDelta).toFixed(2),
-                        currency,
-                      )} since the previous sample`
-                    : ""}
-                </p>
-              </div>
-            ) : null}
+            {hover && hoverPoint
+              ? createPortal(
+                  <div
+                    ref={tooltipRef}
+                    className="pointer-events-none absolute top-0 left-0 z-[2000] -translate-y-full rounded-lg border border-white/10 bg-[#0b1220]/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm"
+                  >
+                    <p className="whitespace-nowrap text-[11px] font-semibold text-white tabular-nums">
+                      {formatMoney(hoverPoint.value.toFixed(2), currency)}
+                    </p>
+                    <p className="whitespace-nowrap text-[10px] text-muted">
+                      {formatPointTime(hoverPoint.at, range)}
+                      {hoverDelta !== null
+                        ? ` · ${hoverDelta >= 0 ? "+" : "-"}${formatMoney(
+                            Math.abs(hoverDelta).toFixed(2),
+                            currency,
+                          )} since the previous sample`
+                        : ""}
+                    </p>
+                  </div>,
+                  document.body,
+                )
+              : null}
 
             <div className="mt-1.5 flex items-center justify-between text-[12px] text-muted">
               {bounds.axis.map((label) => (
