@@ -48,9 +48,13 @@ The `26.08` suffix is the freedesktop SDK branch underneath the GNOME 51
 runtime. Installing the extension by bare name may resolve to a different
 branch and fail the build, so install and pin the branch explicitly.
 
-Build the host architecture:
+Build the host architecture with keys in the environment:
 
 ```bash
+set -a
+. ./.env
+set +a
+
 npm run bundle:flatpak
 ```
 

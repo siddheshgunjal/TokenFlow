@@ -5,8 +5,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+
+import { createPortal } from "react-dom";
 
 import { classNames } from "../lib/format";
 import { Icon } from "./Icons";
@@ -64,9 +67,9 @@ export function SelectDropdown({
   const containerRef = useRef<HTMLSpanElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLSpanElement | null>(null);
-  const [menuMaxWidth, setMenuMaxWidth] = useState<string | undefined>(
-    undefined,
-  );
+  // Portaled menu is positioned against the viewport (see render), so this
+  // drives its fixed-style snapshot. It is updated on open and on scroll/resize.
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
 
   // Flatten the sections into one list for keyboard navigation and lookups.
   const flat = useMemo(
@@ -112,7 +115,10 @@ export function SelectDropdown({
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      if (
+        !containerRef.current?.contains(event.target as Node) &&
+        !menuRef.current?.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -127,14 +133,55 @@ export function SelectDropdown({
     focusOption(index >= 0 ? index : 0);
   }, [open, flat, value, focusOption]);
 
-  // Clamp the menu width to the space available to the left of the trigger so
-  // it never overflows the window (the menu is right-aligned to the trigger).
+  // The open menu is rendered in a portal above every card, so it is positioned
+  // against the viewport rather than the trigger's parent. Its right edge stays
+  // aligned to the trigger so it never drifts, and it re-checks on scroll/resize.
   useLayoutEffect(() => {
     if (!open) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setMenuMaxWidth(`${Math.max(8 * 4, rect.right - 4)}px`);
-  }, [open]);
+    const container = containerRef.current;
+    const trigger = triggerRef.current;
+    if (!container || !trigger) return;
+    const tr = trigger.getBoundingClientRect();
+
+    // Right-align to the trigger; clamp to at least 32px so the menu never
+    // collapses to nothing against the viewport edge.
+    const right = Math.max(8 * 4, window.innerWidth - tr.right - 4);
+    // Cap the width to the space between the left viewport edge and the trigger.
+    const maxWidth = Math.max(8 * 4, tr.right - 4);
+
+    setMenuStyle({
+      position: "fixed",
+      zIndex: 1000,
+      right: `${right}px`,
+      ...(menuSide === "down"
+        ? { top: tr.bottom + 4 }
+        : { bottom: tr.top - 4 }),
+      minWidth,
+      maxHeight,
+      maxWidth: `${maxWidth}px`,
+    });
+
+    const reposition = () => {
+      if (!triggerRef.current) return;
+      const tr = triggerRef.current.getBoundingClientRect();
+      const maxWidth = Math.max(8 * 4, tr.right - 4);
+      setMenuStyle((current) => ({
+        ...current,
+        right: `${Math.max(8 * 4, window.innerWidth - tr.right - 4)}px`,
+        ...(menuSide === "down"
+          ? { top: tr.bottom + 4 }
+          : { bottom: tr.top - 4 }),
+        ...(maxWidth ? { maxWidth: `${maxWidth}px` } : null),
+      }));
+    };
+
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, menuSide]);
 
   // The trigger opens on any activating key while closed.
   const handleTriggerKeyDown = (event: ReactKeyboardEvent) => {
@@ -239,41 +286,37 @@ export function SelectDropdown({
         />
       </button>
 
-      {open ? (
-        <span
-          ref={menuRef}
-          role="listbox"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-          onKeyDown={handleMenuKeyDown}
-          className={classNames(
-            "absolute right-0 z-30 flex flex-col gap-0.5 overflow-y-auto rounded-lg border border-white/10 bg-[#0b1220] p-1 shadow-lg outline-none",
-            menuSide === "down" ? "top-full" : "bottom-full",
-          )}
-          style={{
-            minWidth,
-            maxHeight,
-            ...(menuMaxWidth ? { maxWidth: menuMaxWidth } : null),
-          }}
-        >
-          {groups.map((group) => {
-            const offset = cursor;
-            cursor += group.options.length;
-            return (
-              <span key={group.label || "options"} className="block">
-                {group.label ? (
-                  <span className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/80">
-                    {group.label}
+      {open
+        ? createPortal(
+            <span
+              ref={menuRef}
+              role="listbox"
+              aria-label={ariaLabel}
+              tabIndex={-1}
+              onKeyDown={handleMenuKeyDown}
+              className="flex flex-col gap-0.5 overflow-y-auto rounded-lg border border-white/10 bg-[#0b1220] p-1 shadow-lg outline-none"
+              style={menuStyle}
+            >
+              {groups.map((group) => {
+                const offset = cursor;
+                cursor += group.options.length;
+                return (
+                  <span key={group.label || "options"} className="block">
+                    {group.label ? (
+                      <span className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">
+                        {group.label}
+                      </span>
+                    ) : null}
+                    {group.options.map((option, index) =>
+                      renderOption(option, offset + index),
+                    )}
                   </span>
-                ) : null}
-                {group.options.map((option, index) =>
-                  renderOption(option, offset + index),
-                )}
-              </span>
-            );
-          })}
-        </span>
-      ) : null}
+                );
+              })}
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }

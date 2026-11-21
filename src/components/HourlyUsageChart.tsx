@@ -1,4 +1,12 @@
-import { useId, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { formatCompact } from "../lib/format";
 
@@ -26,6 +34,7 @@ export function HourlyUsageChart({
 }) {
   const gradientId = useId();
   const plotRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [hoverHour, setHoverHour] = useState<number | null>(null);
 
   // Shared y-scale across all series, from 0 to the maximum value.
@@ -80,6 +89,38 @@ export function HourlyUsageChart({
       }))
       .sort((left, right) => right.value - left.value);
   }, [hoverHour, series]);
+
+  // The hover tooltip is portaled to `document.body`, so the viewBox
+  // percentages are no longer measured from the plot — convert them to
+  // absolute viewport pixels anchored to the plot's box. The card's left edge
+  // sits exactly on the hovered point, so there is no horizontal shift.
+  const tooltipPx = useMemo(() => {
+    if (tooltipEntries === null || hoverHour === null) return null;
+    const ref = plotRef.current?.getBoundingClientRect();
+    const xPct = toX(hoverHour);
+    const yPct = Math.min(...tooltipEntries.map((e) => toY(e.value)));
+    return {
+      left: ref ? ref.left + (xPct / 100) * ref.width : xPct,
+      top: ref ? ref.top + (yPct / 100) * ref.height : yPct,
+    };
+  }, [tooltipEntries, hoverHour, toX, toY]);
+
+  // Position the portaled tooltip imperatively in a layout effect (after DOM
+  // commit, before paint) so the clamped position is the only one ever shown.
+  useLayoutEffect(() => {
+    const node = tooltipRef.current;
+    if (!node || tooltipPx === null) return;
+    const viewportWidth =
+      document.documentElement.clientWidth || window.innerWidth;
+    const width = node.offsetWidth;
+    if (width > 0) {
+      const maxLeft = Math.max(8, viewportWidth - 8 - width);
+      node.style.left = `${Math.min(Math.max(8, tooltipPx.left), maxLeft)}px`;
+    } else {
+      node.style.left = `${tooltipPx.left}px`;
+    }
+    node.style.top = `${tooltipPx.top}px`;
+  }, [tooltipPx]);
 
   return (
     <div className="flex min-h-0 flex-col">
@@ -204,35 +245,34 @@ export function HourlyUsageChart({
             ))
           : null}
 
-        {tooltipEntries ? (
-          <div
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-white/10 bg-[#0b1220]/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm"
-            style={{
-              left: `${Math.max(12, Math.min(toX(hoverHour!), 88))}%`,
-              top: `${Math.min(...tooltipEntries.map((e) => toY(e.value)))}%`,
-              marginTop: "-8px",
-            }}
-          >
-            <p className="whitespace-nowrap text-[10px] font-medium text-muted">
-              {hourLabel(hoverHour!)}
-            </p>
-            {tooltipEntries.map((entry) => (
+        {tooltipEntries
+          ? createPortal(
               <div
-                key={entry.label}
-                className="flex items-center gap-1.5 whitespace-nowrap text-[11px] tabular-nums"
+                ref={tooltipRef}
+                className="pointer-events-none absolute top-0 left-0 z-[2000] -translate-y-full rounded-lg border border-white/10 bg-[#0b1220]/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm"
               >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: entry.color }}
-                />
-                <span className="text-muted">{entry.label}</span>
-                <span className="ml-auto font-semibold text-white">
-                  {formatCompact(entry.value)}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+                <p className="whitespace-nowrap text-[10px] font-medium text-muted">
+                  {hourLabel(hoverHour!)}
+                </p>
+                {tooltipEntries.map((entry) => (
+                  <div
+                    key={entry.label}
+                    className="flex items-center gap-1.5 whitespace-nowrap text-[11px] tabular-nums"
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: entry.color }}
+                    />
+                    <span className="text-muted">{entry.label}</span>
+                    <span className="ml-auto font-semibold text-white">
+                      {formatCompact(entry.value)}
+                    </span>
+                  </div>
+                ))}
+              </div>,
+              document.body,
+            )
+          : null}
 
         <div className="mt-1.5 flex items-center justify-between text-[12px] text-muted">
           {HOUR_LABELS.map((label) => (
