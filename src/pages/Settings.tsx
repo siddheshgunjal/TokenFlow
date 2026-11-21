@@ -807,7 +807,7 @@ function Toggle({
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors duration-200 ${
+        className={`relative mt-0.5 h-6 w-11 shrink-0 appearance-none rounded-full border transition-colors duration-200 will-change-transform ${
           disabled ? "cursor-not-allowed" : ""
         } ${
           checked
@@ -816,7 +816,7 @@ function Toggle({
         }`}
       >
         <span
-          className={`absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+          className={`absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out will-change-transform ${
             checked ? "translate-x-[20px]" : "translate-x-0"
           }`}
         />
