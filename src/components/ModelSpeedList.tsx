@@ -1,10 +1,9 @@
 import { useMemo } from "react";
 
 import { formatRelative, formatTokensPerSecond } from "../lib/format";
-import { APPROX_TOOLTIP, THROUGHPUT_TOOLTIP } from "../lib/throughput";
+import { APPROX_TOOLTIP } from "../lib/throughput";
 import { colorForModel, type ModelColor } from "../lib/modelColors";
 import type { ModelPerformanceEntry } from "../lib/types";
-import { Icon } from "./Icons";
 
 /**
  * The Speed tab of the Models card. Shows per-model generation and prefill
@@ -78,18 +77,6 @@ export function ModelSpeedList({
           ))}
         </tbody>
       </table>
-      <p className="mt-3 flex items-center justify-end gap-1 text-[11px] text-muted">
-        <span className="inline-flex items-center">
-          <Icon name="info" className="h-3.5 w-3.5" />
-        </span>
-        <span
-          className="underline-offset-2 hover:underline"
-          title={THROUGHPUT_TOOLTIP}
-        >
-          Time-weighted · Native Ollama timings preferred · /v1 values are
-          estimated
-        </span>
-      </p>
     </div>
   );
 }

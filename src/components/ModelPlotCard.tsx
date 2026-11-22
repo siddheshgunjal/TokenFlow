@@ -5,8 +5,7 @@ import { colorForModel, type ModelColor } from "../lib/modelColors";
 import type { ModelPerformanceEntry, ModelUsage } from "../lib/types";
 import { Icon } from "./Icons";
 
-/** Fixed plot height in px; the width is measured from the container. */
-const PLOT_HEIGHT = 236;
+/** Fixed plot area measured from the container; both axes are measured. */
 const MARGIN = { top: 12, right: 14, bottom: 30, left: 46 };
 
 interface Hover {
@@ -46,6 +45,7 @@ export function ModelPlotCard({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const [height, setHeight] = useState(0);
   const [hover, setHover] = useState<Hover | null>(null);
 
   useLayoutEffect(() => {
@@ -53,20 +53,22 @@ export function ModelPlotCard({
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       setWidth(entries[0].contentRect.width);
+      setHeight(entries[0].contentRect.height);
     });
     ro.observe(el);
     setWidth(el.clientWidth);
+    setHeight(el.clientHeight);
     return () => ro.disconnect();
   }, []);
 
   const plotW = Math.max(0, width - MARGIN.left - MARGIN.right);
-  const plotH = PLOT_HEIGHT - MARGIN.top - MARGIN.bottom;
+  const plotH = Math.max(0, height - MARGIN.top - MARGIN.bottom);
 
   const isSpeed = tab === "speed";
 
   const subtitle = isSpeed
-    ? `Gen vs prefill speed · Y-axis log · last ${rangeDays} days`
-    : "Cache hit rate by model · token-weighted";
+    ? `Gen vs prefill speed · last ${rangeDays} days`
+    : "Cache hit rate by model";
 
   // ---- Usage tab: bar chart of cache hit rate, in Usage-list order ----
   const bars = useMemo(
@@ -155,7 +157,7 @@ export function ModelPlotCard({
     <section className="card flex h-full min-h-0 flex-col p-5">
       <div className="flex items-start justify-between gap-3 shrink-0">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-muted">Model plot</h2>
+          <h2 className="text-base font-semibold text-muted">Visualization</h2>
           <p className="mt-1 text-xs text-muted">{subtitle}</p>
         </div>
         {isSpeed && (
@@ -202,7 +204,7 @@ export function ModelPlotCard({
             <>
               <svg
                 width={width}
-                height={PLOT_HEIGHT}
+                height={height}
                 className="overflow-visible"
                 role="img"
                 aria-label={
@@ -261,17 +263,6 @@ export function ModelPlotCard({
           )}
         </div>
       )}
-
-      <p className="mt-2 flex items-center justify-end gap-1 text-[11px] text-muted">
-        <span className="inline-flex items-center">
-          <Icon name="info" className="h-3.5 w-3.5" />
-        </span>
-        <span>
-          {isSpeed
-            ? "Hover a point for exact speeds · dashed = estimated (/v1)"
-            : "Hover a bar for the model's cache hit rate"}
-        </span>
-      </p>
     </section>
   );
 }
@@ -365,7 +356,7 @@ function SpeedPlot({
       {/* Axis titles */}
       <text
         x={MARGIN.left + plotW / 2}
-        y={PLOT_HEIGHT - 2}
+        y={MARGIN.top + plotH + 34}
         textAnchor="middle"
         className="fill-white/50 text-[10px]"
       >
