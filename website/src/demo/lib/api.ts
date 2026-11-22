@@ -5,6 +5,8 @@ import {
   mockDeleteModelData,
   mockMergeModels,
   mockModelCatalog,
+  mockModelPerformance,
+  mockSpeedSummary,
 } from "./mock";
 import type {
   BalanceSnapshot,
@@ -12,7 +14,9 @@ import type {
   DayUsageDetail,
   ModelCatalogEntry,
   ModelMutationResult,
+  ModelPerformance,
   RefreshResult,
+  SpeedSummary,
 } from "./types";
 
 const wait = (ms: number) =>
@@ -54,6 +58,19 @@ export async function getBalanceHistory({
 export async function getModelCatalog(): Promise<ModelCatalogEntry[]> {
   await wait(80);
   return mockModelCatalog();
+}
+
+export async function getModelPerformance(): Promise<ModelPerformance> {
+  await wait(120);
+  return mockModelPerformance();
+}
+
+export async function getSpeedSummary(
+  since: number,
+  until: number,
+): Promise<SpeedSummary> {
+  await wait(120);
+  return mockSpeedSummary(since, until);
 }
 
 export async function deleteModelData(

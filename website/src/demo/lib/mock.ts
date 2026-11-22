@@ -7,10 +7,13 @@ import type {
   ModelCatalogEntry,
   ModelHourlyUsage,
   ModelMutationResult,
+  ModelPerformance,
+  ModelPerformanceEntry,
   ModelUsage,
   OllamaLog,
   Settings,
   SettingsView,
+  SpeedSummary,
 } from "./types";
 import { toDateKey, todayKey } from "./format";
 
@@ -287,6 +290,105 @@ export function mockModelCatalog(): ModelCatalogEntry[] {
     );
 }
 
+/**
+ * Deterministic per-model performance payload for the browser preview. Mirrors
+ * the active mock models, adds one estimated-only model (to demo `~` and
+ * `Approx`) and one inactive model with `requests: 0` and an older
+ * `lastSeenAt`.
+ */
+export function mockModelPerformance(): ModelPerformance {
+  const active = activeMockModels();
+  const now = Math.floor(Date.now() / 1000);
+  const shares = normalizeMockShares();
+  const daily = mockDaily();
+  const recentDaily = daily.slice(-30);
+  const recentTokens = recentDaily.reduce(
+    (sum, day) => sum + day.totalTokens,
+    0,
+  );
+  const recentRequests = recentDaily.reduce(
+    (sum, day) => sum + day.requests,
+    0,
+  );
+
+  const tokensRecent = distribute(recentTokens, shares);
+  const requestsRecent = distribute(recentRequests, shares);
+
+  const entries: ModelPerformanceEntry[] = active.map((model, index) => {
+    const outputTokens = Math.round(tokensRecent[index] * 0.18);
+    const newInputTokens = tokensRecent[index] - outputTokens;
+    const promptTokens =
+      newInputTokens / Math.max(0.05, 1 - 0.5 * noise(index + 9));
+    const cacheHitRate = 1 - newInputTokens / Math.max(1, promptTokens);
+    // A deterministic tok/s per model; the second model is estimated-only.
+    const estimatedOnly = index === active.length - 1;
+    const generation = 62.4 - index * 14;
+    const prefill = 1400 - index * 300;
+    const timed = Math.round(requestsRecent[index] * 0.72);
+    const estimated = Math.round(requestsRecent[index] * 0.14);
+    return {
+      model: model.name,
+      requests: requestsRecent[index],
+      newInputTokens,
+      outputTokens,
+      totalTokens: tokensRecent[index],
+      cacheHitRate: Math.min(1, Math.max(0, cacheHitRate)),
+      generationTokensPerSec: estimatedOnly ? null : generation,
+      prefillTokensPerSec: estimatedOnly ? null : prefill,
+      estimatedGenerationTokensPerSec: estimatedOnly ? 38.2 : null,
+      estimatedPrefillTokensPerSec: estimatedOnly ? 1100 : null,
+      timedRequests: estimatedOnly ? 0 : timed,
+      estimatedRequests: estimatedOnly ? estimated : 0,
+      lastSeenAt: now - index * 5400,
+    };
+  });
+
+  // Inactive model: no usage in the range, older last-seen, no speeds.
+  entries.push({
+    model: "old-model:latest",
+    requests: 0,
+    newInputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    cacheHitRate: 0,
+    generationTokensPerSec: null,
+    prefillTokensPerSec: null,
+    estimatedGenerationTokensPerSec: null,
+    estimatedPrefillTokensPerSec: null,
+    timedRequests: 0,
+    estimatedRequests: 0,
+    lastSeenAt: now - 45 * 24 * 60 * 60,
+  });
+
+  return { rangeDays: 30, models: entries };
+}
+
+/**
+ * Browser-preview stand-in for `get_speed_summary`. Returns deterministic but
+ * window-dependent values so the Day/Week/Month selector visibly changes and
+ * refreshed windows move slightly, mirroring real aggregate behavior.
+ */
+export function mockSpeedSummary(since: number, until: number): SpeedSummary {
+  const days = Math.max(1, Math.round((until - since) / 86_400));
+  // Longer windows average over more requests, so they trend toward a stable
+  // mid-range rate; tiny windows get a deterministic per-window wobble.
+  const wobble = ((since / 3600) % 7) / 7;
+  const requests = Math.round(days * 18 * (0.9 + wobble * 0.2));
+  const timed = Math.round(requests * 0.82);
+  const estimated = Math.round(requests * 0.11);
+  return {
+    since,
+    until,
+    requests,
+    generationTokensPerSec: 38.6 + wobble * 6.4,
+    prefillTokensPerSec: 980 + wobble * 260,
+    estimatedGenerationTokensPerSec: 34.2 + wobble * 4.8,
+    estimatedPrefillTokensPerSec: 890 + wobble * 210,
+    timedRequests: timed,
+    estimatedRequests: estimated,
+  };
+}
+
 export function mockDeleteModelData(models: string[]): ModelMutationResult {
   if (models.length === 0) {
     throw new Error("Select at least one model to delete.");
@@ -503,10 +605,26 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
           const completion =
             index % 3 === 0 ? 0 : Math.floor(noise(index + 47) * 900);
           const cached = Math.floor(prompt * (0.15 + noise(index + 53) * 0.5));
+          // Every fourth row is an estimated `/v1` streaming request so the
+          // preview demonstrates the `~` prefix and `Approx` chip.
+          const estimated = index % 4 === 3;
+          const hasTimings = completion > 0;
+          const evalMs = 600 + Math.floor(noise(index + 71) * 5000);
+          const promptMs = 120 + Math.floor(noise(index + 77) * 900);
+          const generationTokensPerSec = hasTimings
+            ? completion / (evalMs / 1000)
+            : null;
+          const newInput = Math.max(0, prompt - cached);
+          const prefillTokensPerSec =
+            hasTimings && newInput > 0 ? newInput / (promptMs / 1000) : null;
           return {
             id: 1000 - index,
             model,
-            endpoint: index % 4 === 0 ? "/v1/chat/completions" : "/api/chat",
+            endpoint: estimated
+              ? "/v1/chat/completions"
+              : index % 4 === 0
+                ? "/v1/chat/completions"
+                : "/api/chat",
             inputTokens: prompt,
             outputTokens: completion,
             cachedInputTokens: cached,
@@ -514,6 +632,15 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
             cacheHitRate: prompt > 0 ? Math.min(1, cached / prompt) : 0,
             createdAt: Math.floor(Date.now() / 1000) - index * 780,
             durationMs: 900 + Math.floor(noise(index + 61) * 7000),
+            generationTokensPerSec,
+            prefillTokensPerSec,
+            promptEvalDurationMs: hasTimings ? promptMs : null,
+            evalDurationMs: hasTimings ? evalMs : null,
+            timingSource: hasTimings
+              ? estimated
+                ? "estimated"
+                : "native"
+              : null,
           };
         });
 
@@ -535,6 +662,18 @@ export function mockDashboard(rangeDays = 30): DashboardSummary {
       todayRequests: today.requests,
       cacheHitRate,
       todayCacheHitRate,
+      generationTokensPerSec: 42.3,
+      prefillTokensPerSec: 1200,
+      estimatedGenerationTokensPerSec: 38.1,
+      estimatedPrefillTokensPerSec: 980,
+      timedRequests: Math.round(requests * 0.78),
+      estimatedRequests: Math.round(requests * 0.14),
+      todayGenerationTokensPerSec: 38.1,
+      todayPrefillTokensPerSec: 980,
+      todayEstimatedGenerationTokensPerSec: 35.4,
+      todayEstimatedPrefillTokensPerSec: 920,
+      todayTimedRequests: Math.round(today.requests * 0.72),
+      todayEstimatedRequests: Math.round(today.requests * 0.18),
     },
     streakDays,
     models: buildModels(totalTokens, newInputTokens, requests),
