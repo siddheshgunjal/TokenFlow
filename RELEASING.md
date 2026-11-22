@@ -24,7 +24,9 @@ bash scripts/update-flatpak-sources.sh
 
 # 3. Optionally record the release in the AppStream metadata.
 node scripts/prepare-flatpak-release.mjs
+```
 
+```bash
 # 4. Commit, tag, and publish the GitHub Release.
 git add VERSION package.json package-lock.json src-tauri/Cargo.toml \
   src-tauri/Cargo.lock src-tauri/tauri.conf.json \
