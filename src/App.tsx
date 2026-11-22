@@ -181,10 +181,32 @@ function DashboardSkeleton() {
         <div className="card h-64 lg:col-span-3" />
         <div className="card h-64 lg:col-span-2" />
       </div>
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="card h-72 lg:col-span-2" />
-        <div className="card h-72 lg:col-span-3" />
+
+      <div className="card p-5">
+        <div className="flex items-center justify-between">
+          <div className="h-2.5 w-24 rounded bg-white/[0.06]" />
+          <div className="h-2.5 w-24 rounded bg-white/[0.06]" />
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
+            <div className="h-2.5 w-16 rounded bg-white/[0.06]" />
+            <div className="mt-3 h-8 w-24 rounded bg-white/[0.07]" />
+            <div className="mt-1 h-2 w-32 rounded bg-white/[0.04]" />
+          </div>
+          <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
+            <div className="h-2.5 w-16 rounded bg-white/[0.06]" />
+            <div className="mt-3 h-8 w-24 rounded bg-white/[0.07]" />
+            <div className="mt-1 h-2 w-32 rounded bg-white/[0.04]" />
+          </div>
+        </div>
       </div>
+
+      <div className="grid auto-rows-[24rem] gap-4 lg:grid-cols-5">
+        <div className="card h-full lg:col-span-3" />
+        <div className="card h-full lg:col-span-2" />
+      </div>
+
+      <div className="card h-[24rem]" />
     </div>
   );
 }

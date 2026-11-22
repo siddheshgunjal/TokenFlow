@@ -2,7 +2,9 @@ import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 
 import { DeepSeekCard } from "../components/DeepSeekCard";
 import { Icon } from "../components/Icons";
-import { ModelBreakdown } from "../components/ModelBreakdown";
+import { ModelBreakdown, type ModelTab } from "../components/ModelBreakdown";
+import { ModelPlotCard } from "../components/ModelPlotCard";
+import { PerformanceStrip } from "../components/PerformanceStrip";
 import { RecentRequests } from "../components/RecentRequests";
 import { StatCard } from "../components/StatCard";
 import {
@@ -13,6 +15,7 @@ import {
   todayKey,
 } from "../lib/format";
 import { buildModelColorMap } from "../lib/modelColors";
+import { useModelPerformance } from "../lib/useModelPerformance";
 import type { DashboardSummary } from "../lib/types";
 
 // The heatmap renders 365 cells; splitting it out of the dashboard bundle
@@ -49,6 +52,9 @@ export function Dashboard({
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
   const [modelMutationKey, setModelMutationKey] = useState(0);
+  // The Models card and the Model plot card share one tab so both views switch
+  // together (Usage: cache bars · Speed: gen/prefill scatter).
+  const [modelTab, setModelTab] = useState<ModelTab>("usage");
   // The selected day defaults to today and is always present: the day-detail
   // panel has no nullable state.
   const [selectedDate, setSelectedDate] = useState<string>(() => todayKey());
@@ -67,6 +73,14 @@ export function Dashboard({
   const modelColors = useMemo(
     () => buildModelColorMap(data.models),
     [data.models],
+  );
+
+  // The Speed payload is fetched once at the Dashboard level so both the
+  // Models card and the Model plot card share a single lazy request.
+  const modelPerformance = useModelPerformance(
+    modelTab === "speed",
+    data.totals.requests,
+    modelMutationKey,
   );
 
   // Stable identities so the memoized heatmap skips re-renders when its data
@@ -202,17 +216,42 @@ export function Dashboard({
         </div>
       </div>
 
+      <PerformanceStrip
+        selectedDate={selectedDate}
+        refreshKey={data.totals.requests}
+      />
+
       <div className="grid auto-rows-[24rem] gap-4 lg:grid-cols-5">
-        <div className="min-h-0 min-w-0 lg:col-span-2">
+        <div className="min-h-0 min-w-0 lg:col-span-3">
           <ModelBreakdown
             models={data.models}
             modelColors={modelColors}
             onModelsChanged={handleModelsChanged}
+            rangeDays={data.rangeDays}
+            tab={modelTab}
+            onTabChange={setModelTab}
+            performance={modelPerformance.performance?.models ?? null}
+            performanceLoading={modelPerformance.loading}
+            performanceError={modelPerformance.error}
+            performanceRetry={modelPerformance.retry}
           />
         </div>
-        <div className="min-h-0 min-w-0 lg:col-span-3">
-          <RecentRequests logs={data.recent} />
+        <div className="min-h-0 min-w-0 lg:col-span-2">
+          <ModelPlotCard
+            tab={modelTab}
+            models={data.models}
+            performance={modelPerformance.performance?.models ?? []}
+            modelColors={modelColors}
+            rangeDays={data.rangeDays}
+            loading={modelPerformance.loading}
+            error={modelPerformance.error}
+            retry={modelPerformance.retry}
+          />
         </div>
+      </div>
+
+      <div className="h-[24rem]">
+        <RecentRequests logs={data.recent} />
       </div>
     </div>
   );
