@@ -21,7 +21,7 @@ use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use crate::{
-    models::{OllamaLogInsert, ProxyStatus},
+    models::{OllamaLogInsert, ProxyStatus, TimingSource},
     state::{AppState, ProxyActivityGuard},
 };
 
@@ -154,6 +154,10 @@ async fn proxy_handler(State(ctx): State<ProxyContext>, request: Request<Body>) 
         upstream_request = upstream_request.body(body_bytes);
     }
 
+    // A second clock for stream-derived `/v1` estimates. `started` remains the
+    // request-wide duration; this one anchors the first-content marker.
+    let upstream_started = Instant::now();
+
     let upstream_response = match upstream_request.send().await {
         Ok(response) => response,
         Err(err) => {
@@ -176,6 +180,7 @@ async fn proxy_handler(State(ctx): State<ProxyContext>, request: Request<Body>) 
         endpoint,
         status.as_u16(),
         started,
+        upstream_started,
         activity,
     );
 
@@ -214,11 +219,31 @@ struct StreamInspector {
     endpoint: String,
     status: u16,
     started: Instant,
+    /// Anchor for stream-derived `/v1` estimates (first-content timing).
+    upstream_started: Instant,
     buffer: Vec<u8>,
     model: Option<String>,
     recorded: bool,
+    /// First content chunk after `upstream_started`, if any.
+    first_content_at: Option<Instant>,
+    /// Most recent content chunk, if any.
+    last_content_at: Option<Instant>,
+    /// Number of content chunks observed (for the `/v1` estimate guard).
+    content_chunks: u32,
+    /// Native timings reported by Ollama, if present. Always preferred over
+    /// stream-derived estimates.
+    native_timings: Option<UpstreamTimings>,
     /// Released when the response stream ends or the client disconnects.
     _activity: ProxyActivityGuard,
+}
+
+/// Upstream-reported inference durations in nanoseconds, tagged with their
+/// source so native and estimated values are never blended.
+#[derive(Debug, Clone, Copy)]
+struct UpstreamTimings {
+    prompt_eval_ns: Option<i64>,
+    eval_ns: Option<i64>,
+    source: TimingSource,
 }
 
 impl StreamInspector {
@@ -228,6 +253,7 @@ impl StreamInspector {
         endpoint: String,
         status: u16,
         started: Instant,
+        upstream_started: Instant,
         activity: ProxyActivityGuard,
     ) -> Self {
         Self {
@@ -236,9 +262,14 @@ impl StreamInspector {
             endpoint,
             status,
             started,
+            upstream_started,
             buffer: Vec::with_capacity(8 * 1024),
             model: None,
             recorded: false,
+            first_content_at: None,
+            last_content_at: None,
+            content_chunks: 0,
+            native_timings: None,
             _activity: activity,
         }
     }
@@ -317,6 +348,32 @@ impl StreamInspector {
             }
         }
 
+        // Stream-derived `/v1` estimates: track the first/last content chunk
+        // so a prefill (TTFT) and generation (first-to-last) span can be
+        // estimated. Only `/v1/*` streaming endpoints are estimated; native
+        // `/api/*` paths always use the reported durations instead.
+        if self.endpoint.starts_with("/v1/") && has_stream_content(&value) {
+            let now = Instant::now();
+            if self.first_content_at.is_none() {
+                self.first_content_at = Some(now);
+            }
+            self.last_content_at = Some(now);
+            self.content_chunks += 1;
+        }
+
+        // Native Ollama reports prompt/generation durations on the final
+        // object. Capture them before recording; they always win over any
+        // stream-derived estimate.
+        let prompt_ns = json_ns(&value, "prompt_eval_duration");
+        let eval_ns = json_ns(&value, "eval_duration");
+        if prompt_ns.is_some() || eval_ns.is_some() {
+            self.native_timings = Some(UpstreamTimings {
+                prompt_eval_ns: prompt_ns,
+                eval_ns,
+                source: TimingSource::Native,
+            });
+        }
+
         // OpenAI-compatible responses (including final SSE usage chunks).
         if let Some(usage) = value.get("usage") {
             let prompt = usage
@@ -380,6 +437,22 @@ impl StreamInspector {
         let endpoint = self.endpoint.clone();
         let state = self.state.clone();
 
+        // Native timings always win. Fall back to a stream-derived estimate for
+        // `/v1` streaming requests; native `/api/*` paths are never estimated.
+        let (prompt_ns, eval_ns, timing_source) = match self.native_timings {
+            Some(native) => (native.prompt_eval_ns, native.eval_ns, Some(native.source)),
+            None if self.endpoint.starts_with("/v1/") => estimate_timings(
+                self.upstream_started,
+                self.first_content_at,
+                self.last_content_at,
+                Instant::now(),
+                self.content_chunks,
+                input_tokens,
+                output_tokens,
+            ),
+            None => (None, None, None),
+        };
+
         // SQLite is blocking; keep it off the stream's async worker thread.
         tokio::task::spawn_blocking(move || {
             let insert = OllamaLogInsert {
@@ -391,6 +464,9 @@ impl StreamInspector {
                 cached_prompt_tokens: cached_input_tokens,
                 created_at,
                 duration_ms: Some(duration_ms),
+                prompt_eval_duration_ns: prompt_ns,
+                eval_duration_ns: eval_ns,
+                timing_source,
             };
 
             match state.db.insert_ollama_log(&insert) {
@@ -402,6 +478,7 @@ impl StreamInspector {
                         cached_input_tokens,
                         cache_hit_rate,
                         endpoint = %endpoint,
+                        timing_source = timing_source.map(|source| source.as_str()).unwrap_or("none"),
                         "recorded Ollama usage"
                     );
                     // The snapshot service coalesces this with other dirty
@@ -420,6 +497,99 @@ impl StreamInspector {
                 }
             }
         });
+    }
+}
+
+/// Reads a nanosecond duration from a JSON object. Accepts unsigned, signed,
+/// and floating point values (some clients send floats) and rejects zero or
+/// negative durations so they can never produce a rate.
+fn json_ns(value: &serde_json::Value, key: &str) -> Option<i64> {
+    value
+        .get(key)
+        .and_then(|value| {
+            value
+                .as_u64()
+                .map(|n| n.min(i64::MAX as u64) as i64)
+                .or_else(|| value.as_i64())
+                .or_else(|| value.as_f64().map(|n| n.round() as i64))
+        })
+        .filter(|n| *n > 0)
+}
+
+/// Returns `true` when a `/v1` stream chunk carries real content: a non-empty
+/// `delta.content`/`delta.reasoning_content`, a non-empty `choices[].text`, or
+/// a non-empty `tool_calls` array. Empty deltas are skipped so the
+/// first-content marker reflects genuine generation.
+fn has_stream_content(value: &serde_json::Value) -> bool {
+    let Some(choices) = value.get("choices").and_then(|value| value.as_array()) else {
+        return false;
+    };
+    choices.iter().any(|choice| {
+        if let Some(delta) = choice.get("delta") {
+            for key in ["content", "reasoning_content"] {
+                if delta
+                    .get(key)
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|text| !text.is_empty())
+                {
+                    return true;
+                }
+            }
+            if delta
+                .get("tool_calls")
+                .and_then(|value| value.as_array())
+                .is_some_and(|calls| !calls.is_empty())
+            {
+                return true;
+            }
+        }
+        choice
+            .get("text")
+            .and_then(|value| value.as_str())
+            .is_some_and(|text| !text.is_empty())
+    })
+}
+
+/// Derives approximate `/v1` durations from stream timing. `ttft` (time to
+/// first content) is a lower bound for prefill because it includes queue and
+/// load time; the generation span is first-to-last content chunk and includes
+/// network jitter. Both are stored as `estimated`, never blended with native
+/// values.
+///
+/// Guards keep single-token responses from producing absurd rates: prefill
+/// needs a TTFT of at least 5 ms, generation needs at least two content
+/// chunks and a 5 ms span.
+fn estimate_timings(
+    upstream_started: Instant,
+    first_content_at: Option<Instant>,
+    last_content_at: Option<Instant>,
+    record_at: Instant,
+    content_chunks: u32,
+    prompt_tokens: i64,
+    completion_tokens: i64,
+) -> (Option<i64>, Option<i64>, Option<TimingSource>) {
+    let Some(first) = first_content_at else {
+        return (None, None, None);
+    };
+
+    let ttft = first.saturating_duration_since(upstream_started);
+    let span = last_content_at
+        .and_then(|last| last.checked_duration_since(first))
+        .unwrap_or_else(|| record_at.saturating_duration_since(first));
+
+    let prompt_ns = (prompt_tokens > 0 && ttft >= Duration::from_millis(5))
+        .then(|| ttft.as_nanos().min(i64::MAX as u128) as i64);
+
+    // Require at least two content chunks and a 5 ms span so single-token
+    // responses cannot produce absurd rates.
+    let eval_ns =
+        (completion_tokens > 0 && content_chunks >= 2 && span >= Duration::from_millis(5))
+            .then(|| span.as_nanos().min(i64::MAX as u128) as i64);
+
+    if prompt_ns.is_none() && eval_ns.is_none() {
+        (None, None, None)
+    } else {
+        (prompt_ns, eval_ns, Some(TimingSource::Estimated))
     }
 }
 
@@ -510,4 +680,128 @@ fn new_request_id() -> String {
 
 fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
     (status, Json(json!({ "error": message.into() }))).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{estimate_timings, has_stream_content, json_ns, TimingSource};
+    use serde_json::json;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn json_ns_reads_ints_floats_and_rejects_nonpositive() {
+        assert_eq!(
+            json_ns(&json!({"eval_duration": 1_500_000_000}), "eval_duration"),
+            Some(1_500_000_000)
+        );
+        assert_eq!(
+            json_ns(&json!({"eval_duration": 1500.4}), "eval_duration"),
+            Some(1500)
+        );
+        assert_eq!(json_ns(&json!({"eval_duration": 0}), "eval_duration"), None);
+        assert_eq!(
+            json_ns(&json!({"eval_duration": -5}), "eval_duration"),
+            None
+        );
+        assert_eq!(json_ns(&json!({"other": 100}), "eval_duration"), None);
+    }
+
+    #[test]
+    fn has_stream_content_detects_all_content_shapes() {
+        let parse = |raw: &str| serde_json::from_str::<serde_json::Value>(raw).expect("valid json");
+
+        // delta.content
+        assert!(has_stream_content(&parse(
+            r#"{"choices": [{"delta": {"content": "hi"}}]}"#
+        )));
+        // delta.reasoning_content
+        assert!(has_stream_content(&parse(
+            r#"{"choices": [{"delta": {"reasoning_content": "think"}}]}"#
+        )));
+        // non-empty tool_calls
+        assert!(has_stream_content(&parse(
+            r#"{"choices": [{"delta": {"tool_calls": [{"id": "1"}]}}]}"#
+        )));
+        // choices[].text (legacy)
+        assert!(has_stream_content(&parse(
+            r#"{"choices": [{"text": "hello"}]}"#
+        )));
+
+        // Empty deltas and no choices are not content.
+        assert!(!has_stream_content(&parse(
+            r#"{"choices": [{"delta": {"content": ""}}]}"#
+        )));
+        assert!(!has_stream_content(&parse(
+            r#"{"choices": [{"delta": {}}]}"#
+        )));
+        assert!(!has_stream_content(&parse(r#"{"choices": []}"#)));
+        assert!(!has_stream_content(&parse(
+            r#"{"usage": {"prompt_tokens": 5}}"#
+        )));
+        assert!(!has_stream_content(&parse(r#"{"done": true}"#)));
+    }
+
+    #[test]
+    fn estimate_timings_requires_content_and_enforces_guards() {
+        let started = Instant::now();
+
+        // No content at all -> nothing estimated.
+        assert_eq!(
+            estimate_timings(started, None, None, Instant::now(), 0, 100, 50),
+            (None, None, None)
+        );
+
+        let first = started + Duration::from_millis(20);
+        let last = first + Duration::from_millis(30);
+
+        // Content present: both prefill (ttft) and generation (span) derived.
+        let (prompt_ns, eval_ns, source) =
+            estimate_timings(started, Some(first), Some(last), Instant::now(), 5, 100, 50);
+        assert_eq!(source, Some(TimingSource::Estimated));
+        assert!(prompt_ns.is_some());
+        assert!(eval_ns.is_some());
+
+        // Single content chunk -> generation is suppressed, prefill still set.
+        let (prompt_ns, eval_ns, source) =
+            estimate_timings(started, Some(first), Some(last), Instant::now(), 1, 100, 50);
+        assert_eq!(source, Some(TimingSource::Estimated));
+        assert!(prompt_ns.is_some());
+        assert_eq!(eval_ns, None);
+
+        // Sub-5 ms span -> generation suppressed.
+        let tight_last = first + Duration::from_millis(2);
+        let (_, eval_ns, _) = estimate_timings(
+            started,
+            Some(first),
+            Some(tight_last),
+            Instant::now(),
+            5,
+            100,
+            50,
+        );
+        assert_eq!(eval_ns, None);
+
+        // Sub-5 ms TTFT -> prefill suppressed.
+        let early_first = started + Duration::from_millis(1);
+        let (prompt_ns, _, _) = estimate_timings(
+            started,
+            Some(early_first),
+            Some(early_first + Duration::from_millis(40)),
+            Instant::now(),
+            5,
+            100,
+            50,
+        );
+        assert_eq!(prompt_ns, None);
+
+        // No prompt tokens -> no prefill even with content.
+        let (prompt_ns, _, _) =
+            estimate_timings(started, Some(first), Some(last), Instant::now(), 5, 0, 50);
+        assert_eq!(prompt_ns, None);
+
+        // No completion tokens -> no generation.
+        let (_, eval_ns, _) =
+            estimate_timings(started, Some(first), Some(last), Instant::now(), 5, 100, 0);
+        assert_eq!(eval_ns, None);
+    }
 }

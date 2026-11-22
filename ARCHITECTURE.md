@@ -87,6 +87,8 @@ pub struct DashboardSummary {
 
 The `useCoreSnapshot` hook registers the `core-snapshot` listener before the initial fetch, applies only snapshots whose `revision` is strictly newer than the current one (discarding stale out-of-order events and the duplicate that arrives when a manual refresh's invoke response and event carry the same revision), and buffers updates while the window is hidden so a reveal is instant and current. Before handing a snapshot to React it reconciles unchanged slices (`totals`, `models`, `daily`, `recent`, `latest_balance`, `proxy`) to their previous references, so `React.memo` on the dashboard cards skips work when only one slice changed. There are no `setInterval` calls anywhere in the UI; a `sync()` catch-up runs on reveal and on window focus (a minimized window is skipped by the core bridge and catches up when restored).
 
+`totals` carries overall throughput (`Totals`): range- and today-time-weighted generation and prefill `tok/s`, split by source (`generation_tokens_per_sec`/`prefill_tokens_per_sec` for native, `estimated_generation_tokens_per_sec`/`estimated_prefill_tokens_per_sec` for `/v1` stream estimates), plus the timed and estimated request counts used to compute coverage. Native and estimated values are aggregated separately and never blended. The dashboard's Model speed card does **not** read these fixed fields; it follows the selected day via the lazy `get_speed_summary(since, until)` command (see design decision #25).
+
 ## Window and renderer lifecycle
 
 Windows are created on demand (`windows.rs::ensure_window`, serialized by
@@ -229,6 +231,7 @@ Model cleanup only mutates `ollama_logs.model`; `request_id` and its unique inde
 23. **Optional heap accounting** — the `heap-stats` cargo feature installs a counting global allocator (`heap_stats.rs`) that tracks live bytes, peak bytes, and allocation calls, and logs them every 60s at debug level. It separates "the core's own heap grew" from "GTK/WebKit retained something" during long captures. It is off by default because it adds two atomic operations to every allocation; enable with `cargo run --features heap-stats` and `RUST_LOG=tokenflow=debug`.
 
 24. **Idle core recycle on Linux** — `recycle.rs` re-execs the process when every window has been hidden and the proxy has been quiet for `idle_recycle_secs` (default 60; `0` disables). Widget renderers are torn down immediately on hide, so this window only covers the core's UI-process library working set. This is the only supported way to release the GTK/WebKit/Mesa library working set that the first webview loads into the core process. The decision is gated on `webview_created`, `visible_windows == 0`, `proxy_activity.in_flight() == 0`, and the quiet window; `ProxyActivityGuard` is held for the whole streamed response, so a long Ollama generation can never be cut. The replacement is started with `--recycled` so it skips window creation, and `reap_inherited_children()` clears the pre-exec `WebKitNetworkProcess` before the new image starts WebKit children. `exec` (rather than spawn-and-exit) preserves the Flatpak sandbox and PID, and the proxy rebinds immediately. The WAL is checkpointed before the exec. The tray always registers under the D-Bus unique connection name instead of `ksni`'s PID-derived well-known name: `exec` preserves the PID, and a host that still has the old item cached under that name (GNOME's AppIndicator extension resets it without rebinding the proxy) would drop the icon after the old connection closes; Flatpak also requires the unique name. The teardown and exec run on a plain OS thread, not the Tokio worker: `tauri_plugin_single_instance::destroy` releases the D-Bus name through a blocking zbus connection, which panics with "Cannot start a runtime from within a runtime" when invoked from a Tokio worker.
+25. **Native-first throughput with `/v1` stream estimates** — Throughput (`tok/s`) is a time-weighted aggregate of generation decode rate and prefill prompt-processing rate, not a count of rows. The generation rate is `eval_count / (eval_duration / 1e9)`; the prefill numerator is the *uncached* prompt tokens (`prompt_tokens - cached_prompt_tokens`, clamped to zero), divided by `prompt_eval_duration / 1e9`. Native durations come from Ollama's `done` object (`prompt_eval_duration` / `eval_duration`) and are preferred; the OpenAI-compatible `/v1` endpoints do not report per-request prefill or eval timings, so for `/v1` *streaming* responses the rate is *estimated* from stream timing (time-to-first-content as a prefill lower bound, first-to-last content chunk as the generation span) and marked approximate. Native and estimated values are stored (`timing_source = 'native' | 'estimated'`) and aggregated **separately** and are never blended into one weighted average. `/v1` non-streaming requests and any request without a `usage` chunk record no timing. The per-model Speed tab uses a lazy `get_model_performance` command that returns *every* distinct recorded model (not just the snapshot's top-12). The overall Model speed card uses a separate lazy `get_speed_summary(since, until)` command driven by a Day/Week/Month selector anchored to the activity calendar's selected day (mirroring the DeepSeek balance chart), so its window is dynamic rather than a fixed snapshot range. Existing history has no timings, so coverage (the fraction of requests that reported a duration) is surfaced alongside the rate; the estimate is intentionally approximate and requires streaming plus a usage chunk.
 
 ## Technology stack
 
@@ -255,6 +258,7 @@ The repository structure has been reorganized per the documentation standardizat
 
 - **Single process: the core is not crash-resilient.** The proxy, SQLite, DeepSeek worker, snapshot service, and tray all run in one Tauri process. The proxy survives every window being closed, but it does **not** survive a core process crash. The command/event boundary (`get_core_snapshot`, `core-snapshot`, `refresh_core`) is the extraction seam for a future daemon split: a later phase can move `snapshot.rs`, `db.rs`, `proxy.rs`, `deepseek.rs`, `secrets.rs`, and `settings.rs` behind the same contract and replace direct calls with a local transport. The UI contract is designed so that becomes a transport change, not a rewrite.
 - Native Ollama responses report `prompt_eval_count`, `prompt_eval_cached_count`, `eval_count`; OpenAI-compatible responses only report `usage` when upstream includes a `usage` object.
+- Generation/prefill speed (`tok/s`) is a time-weighted aggregate using native Ollama `prompt_eval_duration`/`eval_duration` when present. The `/v1` endpoints do not expose these timings, so `/v1` *streaming* requests carry an estimated rate derived from stream timing (marked approximate), while non-streaming `/v1` requests and requests without a `usage` chunk record no timing. Native and estimated values are stored and aggregated separately and are never blended. Existing history predates the `timing_source` column and has no timings until new requests are recorded.
 - TokenFlow does not estimate tokens.
 - Errored requests and interrupted streams are not counted.
 - Duplicate suppression uses `request_id`.
@@ -266,10 +270,10 @@ The repository structure has been reorganized per the documentation standardizat
 
 ## Further reading
 
-- [[docs/perf/webkit-memory-research.md]] — WebKit process/memory investigation, root causes, and techniques
-- [[docs/perf/runtime-after.md]] — Runtime measurements, expected floors, and the validation matrix
-- [[CONTRIBUTING.md]] — Contribution guidelines
-- [[RELEASING.md]] — Release process
-- [[packaging/README.md]] — Packaging and distribution
-- [[flatpak/README.md]] — Flatpak packaging
-- [[BRANDING.md]] — Brand guidelines
+- [docs/perf/webkit-memory-research.md](docs/perf/webkit-memory-research.md) — WebKit process/memory investigation, root causes, and techniques
+- [docs/perf/runtime-after.md](docs/perf/runtime-after.md) — Runtime measurements, expected floors, and the validation matrix
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution guidelines
+- [RELEASING.md](RELEASING.md) — Release process
+- [packaging/README.md](packaging/README.md) — Packaging and distribution
+- [flatpak/README.md](flatpak/README.md) — Flatpak packaging
+- [BRANDING.md](BRANDING.md) — Brand guidelines

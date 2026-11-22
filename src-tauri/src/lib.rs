@@ -170,6 +170,8 @@ pub fn run() {
             commands::clear_usage_data,
             commands::get_day_usage_detail,
             commands::get_model_catalog,
+            commands::get_model_performance,
+            commands::get_speed_summary,
             commands::delete_model_data,
             commands::merge_models,
             commands::get_proxy_status,

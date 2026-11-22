@@ -174,6 +174,9 @@ fn refresh_cycle_does_not_grow_rss() {
                 cached_prompt_tokens: 9_600,
                 created_at: now,
                 duration_ms: Some(1_200),
+                prompt_eval_duration_ns: None,
+                eval_duration_ns: None,
+                timing_source: None,
             };
             db.insert_ollama_log(&log).expect("insert log");
         }

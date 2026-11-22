@@ -1,3 +1,5 @@
+export type TimingSource = "native" | "estimated";
+
 export interface Totals {
   newInputTokens: number;
   outputTokens: number;
@@ -12,6 +14,30 @@ export interface Totals {
   todayRequests: number;
   cacheHitRate: number;
   todayCacheHitRate: number;
+  /** Time-weighted generation rate over native rows in the range. */
+  generationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over native rows in the range. */
+  prefillTokensPerSec: number | null;
+  /** Time-weighted generation rate over estimated (`/v1`) rows in the range. */
+  estimatedGenerationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over estimated (`/v1`) rows in the range. */
+  estimatedPrefillTokensPerSec: number | null;
+  /** Native rows in the range with any duration. */
+  timedRequests: number;
+  /** Estimated rows in the range with any duration. */
+  estimatedRequests: number;
+  /** Time-weighted generation rate over native rows today. */
+  todayGenerationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over native rows today. */
+  todayPrefillTokensPerSec: number | null;
+  /** Time-weighted generation rate over estimated (`/v1`) rows today. */
+  todayEstimatedGenerationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over estimated (`/v1`) rows today. */
+  todayEstimatedPrefillTokensPerSec: number | null;
+  /** Native rows today with any duration. */
+  todayTimedRequests: number;
+  /** Estimated rows today with any duration. */
+  todayEstimatedRequests: number;
 }
 
 export interface ModelUsage {
@@ -82,6 +108,16 @@ export interface OllamaLog {
   cacheHitRate: number;
   createdAt: number;
   durationMs: number | null;
+  /** Per-request generation rate; `null` when no timing was captured. */
+  generationTokensPerSec: number | null;
+  /** Per-request prefill rate; `null` when no timing was captured. */
+  prefillTokensPerSec: number | null;
+  /** Prompt processing time, in milliseconds; `null` when not timed. */
+  promptEvalDurationMs: number | null;
+  /** Generation time, in milliseconds; `null` when not timed. */
+  evalDurationMs: number | null;
+  /** `null` when no timing data was captured for this request. */
+  timingSource: TimingSource | null;
 }
 
 export interface BalanceSnapshot {
@@ -174,6 +210,65 @@ export interface ModelMutationResult {
   rowsAffected: number;
   models: string[];
   target: string | null;
+}
+
+/** One model's usage, cache, and time-weighted speed over the range. */
+export interface ModelPerformanceEntry {
+  model: string;
+  requests: number;
+  newInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheHitRate: number;
+  /** Time-weighted generation rate over native rows. */
+  generationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over native rows. */
+  prefillTokensPerSec: number | null;
+  /** Time-weighted generation rate over estimated (`/v1`) rows. */
+  estimatedGenerationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over estimated (`/v1`) rows. */
+  estimatedPrefillTokensPerSec: number | null;
+  /** Native rows in the range with any duration. */
+  timedRequests: number;
+  /** Estimated rows in the range with any duration. */
+  estimatedRequests: number;
+  /** All-time most recent request, so inactive models still show history. */
+  lastSeenAt: number;
+}
+
+/**
+ * Read-only, lazy overall-speed payload for an arbitrary time window. Anchored
+ * to the dashboard's selected day and Day/Week/Month range so the Model speed
+ * card shows dynamic values instead of a fixed range. Not part of the core
+ * snapshot; the widget never calls it.
+ */
+export interface SpeedSummary {
+  since: number;
+  until: number;
+  /** Every request in the window, timed or not. Coverage denominator. */
+  requests: number;
+  /** Time-weighted generation rate over native rows. */
+  generationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over native rows. */
+  prefillTokensPerSec: number | null;
+  /** Time-weighted generation rate over estimated (`/v1`) rows. */
+  estimatedGenerationTokensPerSec: number | null;
+  /** Time-weighted prefill rate over estimated (`/v1`) rows. */
+  estimatedPrefillTokensPerSec: number | null;
+  /** Native rows in the window with any duration. */
+  timedRequests: number;
+  /** Estimated rows in the window with any duration. */
+  estimatedRequests: number;
+}
+
+/**
+ * Read-only, lazy per-model performance payload. Covers every distinct model
+ * ever recorded (not just the snapshot's top-12); fetched on demand for the
+ * Speed tab.
+ */
+export interface ModelPerformance {
+  rangeDays: number;
+  models: ModelPerformanceEntry[];
 }
 
 export interface ClearDataResult {

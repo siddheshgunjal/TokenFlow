@@ -2,66 +2,66 @@
 import type { ReleaseDownloads } from "./downloads";
 
 export const latestReleaseDownloads: ReleaseDownloads = {
-  "tag": "v0.1.0+alpha.3",
-  "releaseUrl": "https://github.com/siddheshgunjal/TokenFlow/releases/tag/v0.1.0%2Balpha.3",
-  "publishedAt": "2026-11-10T20:12:48Z",
-  "prerelease": true,
+  "tag": "v0.1.0",
+  "releaseUrl": "https://github.com/siddheshgunjal/TokenFlow/releases/tag/v0.1.0",
+  "publishedAt": "2026-11-13T04:49:27Z",
+  "prerelease": false,
   "linux": {
     "x86_64": {
       "appimage": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-x86_64.AppImage",
-        "size": 88893944
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.AppImage",
+        "size": 88877560
       },
       "deb": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-x86_64.deb",
-        "size": 11219862
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.deb",
+        "size": 11219840
       },
       "flatpak": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-x86_64.flatpak",
-        "size": 6786976
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.flatpak",
+        "size": 6799904
       },
       "rpm": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-x86_64.rpm",
-        "size": 11193958
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.rpm",
+        "size": 11197384
       }
     },
     "aarch64": {
       "appimage": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-aarch64.AppImage",
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.AppImage",
         "size": 87153160
       },
       "deb": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-aarch64.deb",
-        "size": 11466216
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.deb",
+        "size": 11468122
       },
       "flatpak": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-aarch64.flatpak",
-        "size": 6040848
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.flatpak",
+        "size": 6046712
       },
       "rpm": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-linux-aarch64.rpm",
-        "size": 11442088
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.rpm",
+        "size": 11442180
       }
     }
   },
   "macos": {
     "aarch64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-macos-aarch64.dmg",
-      "size": 8461739
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-macos-aarch64.dmg",
+      "size": 8441416
     },
     "x86_64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-macos-x86_64.dmg",
-      "size": 8872500
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-macos-x86_64.dmg",
+      "size": 8862328
     }
   },
   "windows": {
     "aarch64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-windows-aarch64-setup.exe",
-      "size": 4853389
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-windows-aarch64-setup.exe",
+      "size": 4859705
     },
     "x86_64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0%2Balpha.3/TokenFlow-0.1.0%2Balpha.3-windows-x86_64-setup.exe",
-      "size": 5505499
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-windows-x86_64-setup.exe",
+      "size": 5498064
     }
   }
 };

@@ -9,6 +9,8 @@ import {
   mockDeepSeekStatus,
   mockSettingsView,
   mockModelCatalog,
+  mockModelPerformance,
+  mockSpeedSummary,
   mockDeleteModelData,
   mockMergeModels,
 } from "./mock";
@@ -20,9 +22,11 @@ import type {
   DeepSeekStatus,
   ModelCatalogEntry,
   ModelMutationResult,
+  ModelPerformance,
   RefreshResult,
   Settings,
   SettingsView,
+  SpeedSummary,
 } from "./types";
 
 export const isTauri =
@@ -177,6 +181,36 @@ export async function getModelCatalog(): Promise<ModelCatalogEntry[]> {
     return mockModelCatalog();
   }
   return invoke<ModelCatalogEntry[]>("get_model_catalog");
+}
+
+/**
+ * Lazy, read-only per-model performance payload. Covers every distinct model
+ * ever recorded (not the snapshot's top-12) and is fetched only when the Speed
+ * tab is shown. Not part of the core snapshot; the widget never calls it.
+ */
+export async function getModelPerformance(): Promise<ModelPerformance> {
+  if (!isTauri) {
+    await delay(120);
+    return mockModelPerformance();
+  }
+  return invoke<ModelPerformance>("get_model_performance");
+}
+
+/**
+ * Lazy overall-speed summary for an arbitrary `[since, until)` window. The
+ * Model speed card uses it to follow the dashboard's selected day and
+ * Day/Week/Month range. Not part of the core snapshot; the widget never calls
+ * it.
+ */
+export async function getSpeedSummary(
+  since: number,
+  until: number,
+): Promise<SpeedSummary> {
+  if (!isTauri) {
+    await delay(120);
+    return mockSpeedSummary(since, until);
+  }
+  return invoke<SpeedSummary>("get_speed_summary", { since, until });
 }
 
 export async function deleteModelData(

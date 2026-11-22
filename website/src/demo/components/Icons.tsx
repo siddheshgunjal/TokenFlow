@@ -13,6 +13,7 @@ export type IconName =
   | "download"
   | "external"
   | "grid"
+  | "info"
   | "key"
   | "monitor"
   | "power"
@@ -87,6 +88,13 @@ const paths: Record<IconName, ReactNode> = {
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
     </>
   ),
   key: (

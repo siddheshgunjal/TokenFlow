@@ -12,6 +12,29 @@ export function formatCompact(value: number): string {
   }).format(value);
 }
 
+/**
+ * Formats a tokens-per-second rate. Large values use compact notation; small
+ * values keep one decimal so slow models are still distinguishable.
+ */
+export function formatTokensPerSecond(
+  value: number | null | undefined,
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (value >= 1000) {
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
+  }
+  if (value >= 100) return formatNumber(value);
+  return value.toFixed(1);
+}
+
+/** Formats a millisecond duration as whole milliseconds under a second. */
+export function formatDurationMs(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
 export function uncachedInputTokens(
   inputTokens: number,
   cachedInputTokens: number,

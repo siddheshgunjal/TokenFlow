@@ -1,5 +1,33 @@
 use serde::{Deserialize, Serialize};
 
+/// Where a request's inference timings came from. Native values are reported
+/// by Ollama; estimated values are derived from `/v1` stream timing and are
+/// always approximate. They are stored and aggregated separately and never
+/// blended into a single weighted average.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimingSource {
+    Native,
+    Estimated,
+}
+
+impl TimingSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Estimated => "estimated",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "native" => Some(Self::Native),
+            "estimated" => Some(Self::Estimated),
+            _ => None,
+        }
+    }
+}
+
 /// A usage row ready to be written to SQLite.
 pub struct OllamaLogInsert {
     pub request_id: String,
@@ -10,6 +38,12 @@ pub struct OllamaLogInsert {
     pub cached_prompt_tokens: i64,
     pub created_at: i64,
     pub duration_ms: Option<i64>,
+    /// Native or stream-derived prompt processing time, in nanoseconds.
+    pub prompt_eval_duration_ns: Option<i64>,
+    /// Native or stream-derived generation time, in nanoseconds.
+    pub eval_duration_ns: Option<i64>,
+    /// `None` when no timing data was captured for this request.
+    pub timing_source: Option<TimingSource>,
 }
 
 /// A DeepSeek balance record parsed from the API and ready to persist.
@@ -44,6 +78,30 @@ pub struct Totals {
     /// Token-weighted cache share: sum(cached) / sum(prompt), 0.0–1.0.
     pub cache_hit_rate: f64,
     pub today_cache_hit_rate: f64,
+    /// Time-weighted generation rate over native rows in the range.
+    pub generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over native rows in the range.
+    pub prefill_tokens_per_sec: Option<f64>,
+    /// Time-weighted generation rate over estimated (`/v1`) rows in the range.
+    pub estimated_generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over estimated (`/v1`) rows in the range.
+    pub estimated_prefill_tokens_per_sec: Option<f64>,
+    /// Native rows in the range with any duration.
+    pub timed_requests: i64,
+    /// Estimated rows in the range with any duration.
+    pub estimated_requests: i64,
+    /// Time-weighted generation rate over native rows today.
+    pub today_generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over native rows today.
+    pub today_prefill_tokens_per_sec: Option<f64>,
+    /// Time-weighted generation rate over estimated (`/v1`) rows today.
+    pub today_estimated_generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over estimated (`/v1`) rows today.
+    pub today_estimated_prefill_tokens_per_sec: Option<f64>,
+    /// Native rows today with any duration.
+    pub today_timed_requests: i64,
+    /// Estimated rows today with any duration.
+    pub today_estimated_requests: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,6 +158,81 @@ pub struct OllamaLog {
     pub cache_hit_rate: f64,
     pub created_at: i64,
     pub duration_ms: Option<i64>,
+    /// Per-request generation rate; `None` when no timing was captured.
+    pub generation_tokens_per_sec: Option<f64>,
+    /// Per-request prefill rate; `None` when no timing was captured.
+    pub prefill_tokens_per_sec: Option<f64>,
+    /// Prompt processing time, in milliseconds; `None` when not timed.
+    pub prompt_eval_duration_ms: Option<i64>,
+    /// Generation time, in milliseconds; `None` when not timed.
+    pub eval_duration_ms: Option<i64>,
+    /// `None` when no timing data was captured for this request.
+    pub timing_source: Option<TimingSource>,
+}
+
+/// Read-only, lazy per-model performance payload. This is not part of
+/// [`DashboardSummary`]; it is built on demand by `get_model_performance`.
+/// It covers every distinct model ever recorded, not just the snapshot's
+/// top-12.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPerformance {
+    pub range_days: u32,
+    pub models: Vec<ModelPerformanceEntry>,
+}
+
+/// Read-only, lazy overall-speed payload for an arbitrary time window.
+/// Anchored to the dashboard's selected day and Day/Week/Month range, so the
+/// Model speed card can show dynamic values instead of a fixed range. This is
+/// not part of [`DashboardSummary`] and the widget never calls it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeedSummary {
+    pub since: i64,
+    pub until: i64,
+    /// Every request in the window, timed or not. Coverage denominator.
+    pub requests: i64,
+    /// Time-weighted generation rate over native rows.
+    pub generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over native rows.
+    pub prefill_tokens_per_sec: Option<f64>,
+    /// Time-weighted generation rate over estimated (`/v1`) rows.
+    pub estimated_generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over estimated (`/v1`) rows.
+    pub estimated_prefill_tokens_per_sec: Option<f64>,
+    /// Native rows in the window with any duration.
+    pub timed_requests: i64,
+    /// Estimated rows in the window with any duration.
+    pub estimated_requests: i64,
+}
+
+/// One model's usage, cache, and time-weighted speed over the range. Models
+/// with no usage in the range have `requests == 0`, zero tokens, `None`
+/// speeds, and their all-time `last_seen_at`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPerformanceEntry {
+    pub model: String,
+    pub requests: i64,
+    pub new_input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
+    /// Token-weighted cache share: sum(cached) / sum(prompt), 0.0–1.0.
+    pub cache_hit_rate: f64,
+    /// Time-weighted generation rate over native rows.
+    pub generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over native rows.
+    pub prefill_tokens_per_sec: Option<f64>,
+    /// Time-weighted generation rate over estimated (`/v1`) rows.
+    pub estimated_generation_tokens_per_sec: Option<f64>,
+    /// Time-weighted prefill rate over estimated (`/v1`) rows.
+    pub estimated_prefill_tokens_per_sec: Option<f64>,
+    /// Native rows in the range with any duration.
+    pub timed_requests: i64,
+    /// Estimated rows in the range with any duration.
+    pub estimated_requests: i64,
+    /// All-time most recent request, so inactive models still show history.
+    pub last_seen_at: i64,
 }
 
 /// Per-hour token bucket for a single day. The two denominator fields are

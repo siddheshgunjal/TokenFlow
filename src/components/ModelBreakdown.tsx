@@ -1,11 +1,15 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
 import { formatCompact, formatNumber, formatPercent } from "../lib/format";
+import { APPROX_TOOLTIP, THROUGHPUT_TOOLTIP } from "../lib/throughput";
 import { colorForModel, type ModelColor } from "../lib/modelColors";
-import type { ModelUsage } from "../lib/types";
+import type { ModelPerformanceEntry, ModelUsage } from "../lib/types";
 import { Icon } from "./Icons";
 import { ManageModelsDialog } from "./ManageModelsDialog";
+import { ModelSpeedList } from "./ModelSpeedList";
+
+export type ModelTab = "usage" | "speed";
 
 // Memoized on the `models` and `modelColors` references: the snapshot hook
 // reconciles unchanged slices, so a DeepSeek-only refresh skips this card.
@@ -13,10 +17,26 @@ export const ModelBreakdown = memo(function ModelBreakdown({
   models,
   modelColors,
   onModelsChanged,
+  rangeDays,
+  tab,
+  onTabChange,
+  performance,
+  performanceLoading,
+  performanceError,
+  performanceRetry,
 }: {
   models: ModelUsage[];
   modelColors: Map<string, ModelColor>;
   onModelsChanged: () => void;
+  rangeDays: number;
+  // Shared with the Model plot card so both switch together.
+  tab: ModelTab;
+  onTabChange: (tab: ModelTab) => void;
+  // Fetched by the parent (Dashboard) so both cards share one lazy payload.
+  performance: ModelPerformanceEntry[] | null;
+  performanceLoading: boolean;
+  performanceError: string | null;
+  performanceRetry: () => void;
 }) {
   const [manageOpen, setManageOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -29,27 +49,68 @@ export const ModelBreakdown = memo(function ModelBreakdown({
     };
   }, []);
 
-  const maxTokens = Math.max(...models.map((model) => model.totalTokens), 1);
-  const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
-
   const showNotice = useCallback((msg: string) => {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(msg);
     noticeTimer.current = setTimeout(() => setNotice(null), 5000);
   }, []);
 
+  const maxTokens = Math.max(...models.map((model) => model.totalTokens), 1);
+  const totalTokens = models.reduce((sum, model) => sum + model.totalTokens, 0);
+
+  const activeCount = useMemo(
+    () => (performance ?? []).filter((entry) => entry.requests > 0).length,
+    [performance],
+  );
+
   return (
     <section className="card flex h-full min-h-0 flex-col p-5">
       <div className="flex items-start justify-between gap-3 shrink-0">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-muted">Models</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-muted">Models</h2>
+            <div
+              role="tablist"
+              aria-label="Models view"
+              className="inline-flex shrink-0 items-center rounded-lg border border-white/10 bg-white/[0.03] p-0.5"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "usage"}
+                onClick={() => onTabChange("usage")}
+                className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                  tab === "usage"
+                    ? "bg-white/[0.06] text-white"
+                    : "text-white/40 hover:text-white"
+                }`}
+              >
+                Usage
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "speed"}
+                onClick={() => onTabChange("speed")}
+                className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                  tab === "speed"
+                    ? "bg-white/[0.06] text-white"
+                    : "text-white/40 hover:text-white"
+                }`}
+              >
+                Speed
+              </button>
+            </div>
+          </div>
           <p className="mt-1 text-xs text-muted">
-            New input, output, and cache share
+            {tab === "usage"
+              ? "New input, output, and cache share"
+              : `All recorded models · ${activeCount} active in the last ${rangeDays} days · time-weighted speed`}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="chip shrink-0 whitespace-nowrap">
-            {formatNumber(models.length)} models
+            {formatNumber(tab === "usage" ? models.length : activeCount)} models
           </span>
           <button
             onClick={() => setManageOpen(true)}
@@ -75,6 +136,47 @@ export const ModelBreakdown = memo(function ModelBreakdown({
         </motion.div>
       )}
 
+      {tab === "usage" ? (
+        <UsageList
+          models={models}
+          maxTokens={maxTokens}
+          totalTokens={totalTokens}
+          modelColors={modelColors}
+        />
+      ) : (
+        <ModelSpeedList
+          entries={performance ?? []}
+          rangeDays={rangeDays}
+          loading={performanceLoading}
+          error={performanceError}
+          retry={performanceRetry}
+          modelColors={modelColors}
+        />
+      )}
+
+      <ManageModelsDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        onCompleted={showNotice}
+        onModelsChanged={onModelsChanged}
+      />
+    </section>
+  );
+});
+
+function UsageList({
+  models,
+  maxTokens,
+  totalTokens,
+  modelColors,
+}: {
+  models: ModelUsage[];
+  maxTokens: number;
+  totalTokens: number;
+  modelColors: Map<string, ModelColor>;
+}) {
+  return (
+    <>
       {models.length === 0 ? (
         <div className="mt-5 flex min-h-0 flex-1 flex-col justify-center rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
           <p className="text-sm text-muted">No model usage yet</p>
@@ -140,13 +242,9 @@ export const ModelBreakdown = memo(function ModelBreakdown({
           })}
         </div>
       )}
-
-      <ManageModelsDialog
-        open={manageOpen}
-        onClose={() => setManageOpen(false)}
-        onCompleted={showNotice}
-        onModelsChanged={onModelsChanged}
-      />
-    </section>
+    </>
   );
-});
+}
+
+export { APPROX_TOOLTIP, THROUGHPUT_TOOLTIP };
+export type { ModelPerformanceEntry };

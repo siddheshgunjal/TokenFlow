@@ -7,7 +7,8 @@ use crate::{
     error::AppError,
     models::{
         BalanceSnapshot, ClearDataResult, DashboardSummary, DayUsageDetail, DeepSeekStatus,
-        ModelCatalogEntry, ModelMutationResult, ProxyStatus, RefreshResult,
+        ModelCatalogEntry, ModelMutationResult, ModelPerformance, ProxyStatus, RefreshResult,
+        SpeedSummary,
     },
     secrets::{self, KeyringStore, SecretStore},
     settings::{Settings, SettingsView},
@@ -272,6 +273,36 @@ pub async fn get_model_catalog(
 ) -> Result<Vec<ModelCatalogEntry>, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || state.db.model_catalog())
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+/// Lazy, read-only per-model performance payload. This is deliberately not
+/// part of the core snapshot: it covers every distinct model ever recorded
+/// (not the snapshot's top-12) and is fetched only when the Speed tab is
+/// shown. The widget never calls it.
+#[tauri::command]
+pub async fn get_model_performance(state: State<'_, AppState>) -> Result<ModelPerformance, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.model_performance())
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+/// Lazy overall-speed summary for an arbitrary `[since, until)` window. The
+/// Model speed card uses it to follow the dashboard's selected day and
+/// Day/Week/Month range instead of a fixed snapshot range. Not part of the
+/// core snapshot; the widget never calls it.
+#[tauri::command]
+pub async fn get_speed_summary(
+    state: State<'_, AppState>,
+    since: i64,
+    until: i64,
+) -> Result<SpeedSummary, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.speed_summary(since, until))
         .await
         .map_err(|err| err.to_string())?
         .map_err(|err| err.to_string())

@@ -143,10 +143,12 @@ function DashboardSkeleton() {
         <div className="card h-64 lg:col-span-3" />
         <div className="card h-64 lg:col-span-2" />
       </div>
+      <div className="card h-28" />
       <div className="grid gap-4 lg:grid-cols-5">
-        <div className="card h-72 lg:col-span-2" />
         <div className="card h-72 lg:col-span-3" />
+        <div className="card h-72 lg:col-span-2" />
       </div>
+      <div className="card h-[24rem]" />
     </div>
   );
 }

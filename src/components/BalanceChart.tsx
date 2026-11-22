@@ -9,48 +9,17 @@ import {
 import { createPortal } from "react-dom";
 
 import { getBalanceHistory } from "../lib/api";
-import { formatMoney, parseDateKey } from "../lib/format";
+import { RANGE_OPTIONS, rangeFor, type ChartRange } from "../lib/chartRange";
+import { formatMoney } from "../lib/format";
 import type { BalanceSnapshot } from "../lib/types";
 import { Icon } from "./Icons";
-import { SelectDropdown, type SelectOption } from "./SelectDropdown";
-
-type ChartRange = "month" | "week" | "day";
-
-const RANGE_OPTIONS: Array<SelectOption> = [
-  { value: "month", label: "Month" },
-  { value: "week", label: "Week" },
-  { value: "day", label: "Day" },
-];
+import { SelectDropdown } from "./SelectDropdown";
 
 const MAX_POINTS = 180;
 
 interface SeriesPoint {
   at: number;
   value: number;
-}
-
-interface RangeBounds {
-  since: Date;
-  until: Date;
-  label: string;
-  axis: string[];
-}
-
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function startOfWeek(date: Date): Date {
-  const start = startOfDay(date);
-  start.setDate(start.getDate() - start.getDay());
-  return start;
-}
-
-function shortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 function formatPointTime(at: number, range: ChartRange): string {
@@ -61,61 +30,10 @@ function formatPointTime(at: number, range: ChartRange): string {
       minute: "2-digit",
     });
   }
-  return shortDate(date);
-}
-
-function rangeFor(range: ChartRange, selectedDate: string): RangeBounds {
-  // Anchor to the selected day at local noon so DST edges are unambiguous.
-  const anchor = parseDateKey(selectedDate);
-
-  if (range === "month") {
-    const since = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-    const until = new Date(since.getFullYear(), since.getMonth() + 1, 1);
-    const lastDay = new Date(since.getFullYear(), since.getMonth() + 1, 0);
-    const mid = new Date((since.getTime() + lastDay.getTime()) / 2);
-
-    return {
-      since,
-      until,
-      label: since.toLocaleDateString(undefined, {
-        month: "long",
-        year: "numeric",
-      }),
-      axis: [shortDate(since), shortDate(mid), shortDate(lastDay)],
-    };
-  }
-
-  if (range === "week") {
-    const since = startOfWeek(anchor);
-    const until = new Date(since);
-    until.setDate(until.getDate() + 7);
-    const mid = new Date(since);
-    mid.setDate(mid.getDate() + 3);
-    const end = new Date(since);
-    end.setDate(end.getDate() + 6);
-
-    return {
-      since,
-      until,
-      label: `Week of ${shortDate(since)}`,
-      axis: [shortDate(since), shortDate(mid), shortDate(end)],
-    };
-  }
-
-  const since = startOfDay(anchor);
-  const until = new Date(since);
-  until.setDate(until.getDate() + 1);
-
-  return {
-    since,
-    until,
-    label: anchor.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "short",
-      day: "numeric",
-    }),
-    axis: ["12am", "6am", "12pm", "6pm", "11:59pm"],
-  };
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function toSeries(

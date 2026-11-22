@@ -85,6 +85,18 @@
     </screenshot>
     <screenshot>
       <image
+            >https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/main_dashboard_3.png</image>
+      <caption
+            >Performance strip with overall and per-model generation/prefill speed in tok/s, alongside a cache hit-rate chart.</caption>
+    </screenshot>
+    <screenshot>
+      <image
+            >https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/main_dashboard_4.png</image>
+      <caption
+            >Models card switched to the Speed tab, showing a gen-vs-prefill speed scatter plot with the tab control in the header.</caption>
+    </screenshot>
+    <screenshot>
+      <image
             >https://raw.githubusercontent.com/siddheshgunjal/TokenFlow/main/src/assets/screenshots/widget.png</image>
       <caption
             >The floating tray widget for quick glance at token usage and balance.</caption>
@@ -95,6 +107,7 @@
     <binary>tokenflow</binary>
   </provides>
   <releases>
+    <release version="0.2.0" date="2026-11-22" />
     <release version="0.1.0" date="2026-11-12" />
   </releases>
 </component>
