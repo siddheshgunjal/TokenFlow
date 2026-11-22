@@ -43,6 +43,7 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 - Delete or merge recorded model usage from the dashboard to keep experiments out of your metrics. This affects TokenFlow history only; it does not uninstall Ollama models.
 - Your Deepseek account balance tracking
 - Deepseek balance interactive trend chart (Day/Week/Month anchored to the selected day)
+- Per-model and overall generation/prefill speed in tok/s, with exact native Ollama timings and stream-derived `/v1` estimates
 
 🔒 **Private & Local**
 - Everything runs on your machine - no data leaves your desktop
@@ -82,6 +83,7 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 - React dashboard reads from shared SQLite via Tauri broadcast events (`ollama-usage`, `deepseek-balance`, `proxy-status`)
 - DeepSeek balance fetched via `reqwest` + `rustls` on 15-minute polling cycle
 - Records deduplicated by `request_id` via unique SQLite index using `INSERT OR IGNORE`
+- Stores per-request generation/prefill durations from native Ollama `done` objects and stream-estimates `/v1` timings, and exposes time-weighted tok/s speed (native preferred, `/v1` marked approximate)
 - See [ARCHITECTURE.md](ARCHITECTURE.md#how-it-works) for full details
 
 ## 🛡️ Privacy
@@ -94,7 +96,7 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 
 ## 📚 Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — full system design with all 15 design decisions
+- [ARCHITECTURE.md](ARCHITECTURE.md) — full system design with all 16 design decisions
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guidelines, development setup, coding standards, PR process
 - [RELEASING.md](RELEASING.md) — release process, versioning, checklist, GitHub Actions workflow
 - [Packaging Guide](packaging/README.md) — per-format build and install instructions
