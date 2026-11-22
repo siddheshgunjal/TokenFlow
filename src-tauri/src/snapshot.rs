@@ -326,6 +326,9 @@ mod tests {
             cached_prompt_tokens: 0,
             created_at: chrono::Utc::now().timestamp(),
             duration_ms: Some(1),
+            prompt_eval_duration_ns: None,
+            eval_duration_ns: None,
+            timing_source: None,
         };
         db.insert_ollama_log(&insert).expect("insert");
 
@@ -368,9 +371,56 @@ mod tests {
             "rangeDays key present: {raw}"
         );
         assert!(
+            raw.contains("\"rangeDays\":"),
+            "rangeDays key present: {raw}"
+        );
+        assert!(
             raw.contains("\"streakDays\":"),
             "streakDays key present: {raw}"
         );
+        // The new throughput fields serialize as camelCase on `Totals`.
+        for key in [
+            "generationTokensPerSec",
+            "prefillTokensPerSec",
+            "estimatedGenerationTokensPerSec",
+            "estimatedPrefillTokensPerSec",
+            "timedRequests",
+            "estimatedRequests",
+            "todayGenerationTokensPerSec",
+            "todayTimedRequests",
+        ] {
+            assert!(raw.contains(&format!("\"{key}\":")), "key present: {key}");
+        }
+    }
+
+    #[tokio::test]
+    async fn model_performance_serializes_as_camel_case() {
+        let entry = crate::models::ModelPerformanceEntry {
+            model: "llama3.2".into(),
+            requests: 1,
+            new_input_tokens: 1000,
+            output_tokens: 100,
+            total_tokens: 1100,
+            cache_hit_rate: 0.5,
+            generation_tokens_per_sec: Some(100.0),
+            prefill_tokens_per_sec: Some(500.0),
+            estimated_generation_tokens_per_sec: None,
+            estimated_prefill_tokens_per_sec: None,
+            timed_requests: 1,
+            estimated_requests: 0,
+            last_seen_at: 0,
+        };
+        let raw = serde_json::to_string(&entry).expect("serialize");
+        for key in [
+            "generationTokensPerSec",
+            "estimatedGenerationTokensPerSec",
+            "timedRequests",
+            "estimatedRequests",
+            "newInputTokens",
+            "lastSeenAt",
+        ] {
+            assert!(raw.contains(&format!("\"{key}\":")), "key present: {key}");
+        }
     }
 
     #[tokio::test]

@@ -13,14 +13,15 @@ use crate::{
     models::{
         BalanceInfoInput, BalanceSnapshot, ClearDataResult, DailyUsage, DashboardSummary,
         DayUsageDetail, DeepSeekSyncStatus, HourlyUsage, ModelCatalogEntry, ModelHourlyUsage,
-        ModelMutationResult, ModelUsage, OllamaLog, OllamaLogInsert, ProxyStatus, Totals,
-        SNAPSHOT_RANGE_DAYS,
+        ModelMutationResult, ModelPerformance, ModelPerformanceEntry, ModelUsage, OllamaLog,
+        OllamaLogInsert, ProxyStatus, SpeedSummary, TimingSource, Totals, SNAPSHOT_RANGE_DAYS,
     },
 };
 
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_cached_prompt_tokens.sql"),
+    include_str!("../migrations/0003_request_timings.sql"),
 ];
 
 /// Balance samples older than this are pruned by [`Db::run_maintenance`].
@@ -122,8 +123,10 @@ impl Db {
         let conn = self.lock();
         let changed = conn.execute(
             "INSERT OR IGNORE INTO ollama_logs
-                (request_id, model, endpoint, prompt_tokens, completion_tokens, cached_prompt_tokens, created_at, duration_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (request_id, model, endpoint, prompt_tokens, completion_tokens,
+                 cached_prompt_tokens, created_at, duration_ms,
+                 prompt_eval_duration_ns, eval_duration_ns, timing_source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 &log.request_id,
                 &log.model,
@@ -132,7 +135,10 @@ impl Db {
                 log.completion_tokens,
                 log.cached_prompt_tokens,
                 log.created_at,
-                log.duration_ms
+                log.duration_ms,
+                log.prompt_eval_duration_ns,
+                log.eval_duration_ns,
+                log.timing_source.map(|source| source.as_str())
             ],
         )?;
         Ok(changed > 0)
@@ -361,6 +367,42 @@ impl Db {
                     today_usage.cached_prompt_tokens,
                     today_usage.prompt_tokens,
                 ),
+                generation_tokens_per_sec: tokens_per_sec(
+                    Some(range_usage.native_eval_tokens),
+                    Some(range_usage.native_eval_ns),
+                ),
+                prefill_tokens_per_sec: tokens_per_sec(
+                    Some(range_usage.native_prefill_tokens),
+                    Some(range_usage.native_prefill_ns),
+                ),
+                estimated_generation_tokens_per_sec: tokens_per_sec(
+                    Some(range_usage.estimated_eval_tokens),
+                    Some(range_usage.estimated_eval_ns),
+                ),
+                estimated_prefill_tokens_per_sec: tokens_per_sec(
+                    Some(range_usage.estimated_prefill_tokens),
+                    Some(range_usage.estimated_prefill_ns),
+                ),
+                timed_requests: range_usage.native_requests,
+                estimated_requests: range_usage.estimated_requests,
+                today_generation_tokens_per_sec: tokens_per_sec(
+                    Some(today_usage.native_eval_tokens),
+                    Some(today_usage.native_eval_ns),
+                ),
+                today_prefill_tokens_per_sec: tokens_per_sec(
+                    Some(today_usage.native_prefill_tokens),
+                    Some(today_usage.native_prefill_ns),
+                ),
+                today_estimated_generation_tokens_per_sec: tokens_per_sec(
+                    Some(today_usage.estimated_eval_tokens),
+                    Some(today_usage.estimated_eval_ns),
+                ),
+                today_estimated_prefill_tokens_per_sec: tokens_per_sec(
+                    Some(today_usage.estimated_prefill_tokens),
+                    Some(today_usage.estimated_prefill_ns),
+                ),
+                today_timed_requests: today_usage.native_requests,
+                today_estimated_requests: today_usage.estimated_requests,
             },
             streak_days,
             models,
@@ -435,6 +477,95 @@ impl Db {
             out.push(row?);
         }
         Ok(out)
+    }
+
+    /// Builds the lazy, all-model performance payload for the core-owned
+    /// fixed range. Unlike [`Db::snapshot`]'s `models` list (top-12), this
+    /// returns every distinct model ever recorded; inactive models carry
+    /// `requests == 0`, zero tokens, `None` speeds, and their all-time
+    /// `last_seen_at`. The ordering is deterministic so the UI's own sort is
+    /// stable; the UI sorts by speed before display.
+    pub fn model_performance(&self) -> Result<ModelPerformance, AppError> {
+        let conn = self.lock();
+        let range_days = SNAPSHOT_RANGE_DAYS;
+        let today = Local::now().date_naive();
+        let range_start = local_midnight(today - chrono::Duration::days(i64::from(range_days) - 1));
+
+        let query = format!(
+            r#"WITH all_models AS ( SELECT model, MAX(created_at) AS last_seen_at FROM ollama_logs GROUP BY model ), range_rows AS ( SELECT model, prompt_tokens, cached_prompt_tokens, completion_tokens, prompt_eval_duration_ns, eval_duration_ns, timing_source FROM ollama_logs WHERE created_at >= ?1 ) SELECT m.model, m.last_seen_at, COUNT(r.model) AS requests, COALESCE(SUM(CASE WHEN r.prompt_tokens > r.cached_prompt_tokens THEN r.prompt_tokens - r.cached_prompt_tokens ELSE 0 END), 0) AS new_input_tokens, COALESCE(SUM(r.completion_tokens), 0) AS output_tokens, COALESCE(SUM(CASE WHEN r.prompt_tokens > r.cached_prompt_tokens THEN r.prompt_tokens - r.cached_prompt_tokens ELSE 0 END), 0) + COALESCE(SUM(r.completion_tokens), 0) AS total_tokens, COALESCE(SUM(r.prompt_tokens), 0) AS prompt_uses, COALESCE(SUM(r.cached_prompt_tokens), 0) AS cached_uses, {aggregates} FROM all_models m LEFT JOIN range_rows r ON r.model = m.model GROUP BY m.model, m.last_seen_at ORDER BY requests DESC, total_tokens DESC, m.model ASC"#,
+            aggregates = throughput_aggregate_columns("r."),
+        );
+
+        let mut stmt = conn.prepare(&query)?;
+        let rows = stmt.query_map(params![range_start], |row| {
+            let requests: i64 = row.get(2)?;
+            let new_input_tokens: i64 = row.get(3)?;
+            let output_tokens: i64 = row.get(4)?;
+            let total_tokens: i64 = row.get(5)?;
+            let prompt_uses: i64 = row.get(6)?;
+            let cached_uses: i64 = row.get(7)?;
+            Ok(ModelPerformanceEntry {
+                model: row.get(0)?,
+                requests,
+                new_input_tokens,
+                output_tokens,
+                total_tokens,
+                cache_hit_rate: cache_hit_rate(cached_uses, prompt_uses),
+                generation_tokens_per_sec: tokens_per_sec(Some(row.get(8)?), Some(row.get(9)?)),
+                prefill_tokens_per_sec: tokens_per_sec(Some(row.get(10)?), Some(row.get(11)?)),
+                estimated_generation_tokens_per_sec: tokens_per_sec(
+                    Some(row.get(13)?),
+                    Some(row.get(14)?),
+                ),
+                estimated_prefill_tokens_per_sec: tokens_per_sec(
+                    Some(row.get(15)?),
+                    Some(row.get(16)?),
+                ),
+                timed_requests: row.get(12)?,
+                estimated_requests: row.get(17)?,
+                last_seen_at: row.get(1)?,
+            })
+        })?;
+
+        let mut models = Vec::new();
+        for row in rows {
+            models.push(row?);
+        }
+
+        Ok(ModelPerformance { range_days, models })
+    }
+
+    /// Time-weighted overall throughput for an arbitrary `[since, until)`
+    /// window, used by the Model speed card's Day/Week/Month selector. Native
+    /// and estimated aggregates are computed separately and never blended.
+    pub fn speed_summary(&self, since: i64, until: i64) -> Result<SpeedSummary, AppError> {
+        let conn = self.lock();
+        let query = format!(
+            r"SELECT COUNT(*), {aggregates} FROM ollama_logs WHERE created_at >= ?1 AND created_at < ?2",
+            aggregates = throughput_aggregate_columns(""),
+        );
+
+        let summary = conn.query_row(&query, params![since, until], |row| {
+            Ok(SpeedSummary {
+                since,
+                until,
+                requests: row.get(0)?,
+                generation_tokens_per_sec: tokens_per_sec(Some(row.get(1)?), Some(row.get(2)?)),
+                prefill_tokens_per_sec: tokens_per_sec(Some(row.get(3)?), Some(row.get(4)?)),
+                estimated_generation_tokens_per_sec: tokens_per_sec(
+                    Some(row.get(6)?),
+                    Some(row.get(7)?),
+                ),
+                estimated_prefill_tokens_per_sec: tokens_per_sec(
+                    Some(row.get(8)?),
+                    Some(row.get(9)?),
+                ),
+                timed_requests: row.get(5)?,
+                estimated_requests: row.get(10)?,
+            })
+        })?;
+
+        Ok(summary)
     }
 
     pub fn delete_model_data(&self, models: &[String]) -> Result<ModelMutationResult, AppError> {
@@ -546,46 +677,46 @@ struct UsageTotals {
     peak_context_tokens: i64,
     latest_context_tokens: i64,
     latest_cached_input_tokens: i64,
+    native_eval_tokens: i64,
+    native_eval_ns: i64,
+    native_prefill_tokens: i64,
+    native_prefill_ns: i64,
+    native_requests: i64,
+    estimated_eval_tokens: i64,
+    estimated_eval_ns: i64,
+    estimated_prefill_tokens: i64,
+    estimated_prefill_ns: i64,
+    estimated_requests: i64,
 }
 
 fn totals_since(conn: &Connection, since: i64) -> rusqlite::Result<UsageTotals> {
-    conn.query_row(
-        "SELECT COALESCE(SUM(CASE
-                        WHEN prompt_tokens > cached_prompt_tokens
-                        THEN prompt_tokens - cached_prompt_tokens
-                        ELSE 0
-                    END), 0),
-                COALESCE(SUM(completion_tokens), 0),
-                COALESCE(SUM(prompt_tokens), 0),
-                COALESCE(SUM(cached_prompt_tokens), 0),
-                COUNT(*),
-                COALESCE(MAX(prompt_tokens), 0),
-                COALESCE((SELECT prompt_tokens
-                          FROM ollama_logs
-                          WHERE created_at >= ?1
-                          ORDER BY created_at DESC, id DESC
-                          LIMIT 1), 0),
-                COALESCE((SELECT cached_prompt_tokens
-                          FROM ollama_logs
-                          WHERE created_at >= ?1
-                          ORDER BY created_at DESC, id DESC
-                          LIMIT 1), 0)
-         FROM ollama_logs
-         WHERE created_at >= ?1",
-        params![since],
-        |row| {
-            Ok(UsageTotals {
-                new_input_tokens: row.get(0)?,
-                output_tokens: row.get(1)?,
-                prompt_tokens: row.get(2)?,
-                cached_prompt_tokens: row.get(3)?,
-                requests: row.get(4)?,
-                peak_context_tokens: row.get(5)?,
-                latest_context_tokens: row.get(6)?,
-                latest_cached_input_tokens: row.get(7)?,
-            })
-        },
-    )
+    let query = format!(
+        r"SELECT COALESCE(SUM(CASE WHEN prompt_tokens > cached_prompt_tokens THEN prompt_tokens - cached_prompt_tokens ELSE 0 END), 0), COALESCE(SUM(completion_tokens), 0), COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(cached_prompt_tokens), 0), COUNT(*), COALESCE(MAX(prompt_tokens), 0), COALESCE((SELECT prompt_tokens FROM ollama_logs WHERE created_at >= ?1 ORDER BY created_at DESC, id DESC LIMIT 1), 0), COALESCE((SELECT cached_prompt_tokens FROM ollama_logs WHERE created_at >= ?1 ORDER BY created_at DESC, id DESC LIMIT 1), 0), {aggregates} FROM ollama_logs WHERE created_at >= ?1",
+        aggregates = throughput_aggregate_columns(""),
+    );
+
+    conn.query_row(&query, params![since], |row| {
+        Ok(UsageTotals {
+            new_input_tokens: row.get(0)?,
+            output_tokens: row.get(1)?,
+            prompt_tokens: row.get(2)?,
+            cached_prompt_tokens: row.get(3)?,
+            requests: row.get(4)?,
+            peak_context_tokens: row.get(5)?,
+            latest_context_tokens: row.get(6)?,
+            latest_cached_input_tokens: row.get(7)?,
+            native_eval_tokens: row.get(8)?,
+            native_eval_ns: row.get(9)?,
+            native_prefill_tokens: row.get(10)?,
+            native_prefill_ns: row.get(11)?,
+            native_requests: row.get(12)?,
+            estimated_eval_tokens: row.get(13)?,
+            estimated_eval_ns: row.get(14)?,
+            estimated_prefill_tokens: row.get(15)?,
+            estimated_prefill_ns: row.get(16)?,
+            estimated_requests: row.get(17)?,
+        })
+    })
 }
 
 fn models_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<ModelUsage>> {
@@ -727,7 +858,10 @@ fn recent_logs(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<OllamaLog>
                 cached_prompt_tokens,
                 prompt_tokens + completion_tokens AS total_tokens,
                 created_at,
-                duration_ms
+                duration_ms,
+                prompt_eval_duration_ns,
+                eval_duration_ns,
+                timing_source
          FROM ollama_logs
          ORDER BY created_at DESC, id DESC
          LIMIT ?1",
@@ -737,6 +871,9 @@ fn recent_logs(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<OllamaLog>
         let input_tokens: i64 = row.get(3)?;
         let output_tokens: i64 = row.get(4)?;
         let cached_input_tokens = row.get::<_, i64>(5)?.clamp(0, input_tokens);
+        let prompt_ns: Option<i64> = row.get(9)?;
+        let eval_ns: Option<i64> = row.get(10)?;
+        let timing_source_text: Option<String> = row.get(11)?;
         Ok(OllamaLog {
             id: row.get(0)?,
             model: row.get(1)?,
@@ -748,6 +885,16 @@ fn recent_logs(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<OllamaLog>
             cache_hit_rate: cache_hit_rate(cached_input_tokens, input_tokens),
             created_at: row.get(7)?,
             duration_ms: row.get(8)?,
+            generation_tokens_per_sec: tokens_per_sec(Some(output_tokens), eval_ns),
+            prefill_tokens_per_sec: tokens_per_sec(
+                Some((input_tokens - cached_input_tokens).max(0)),
+                prompt_ns,
+            ),
+            prompt_eval_duration_ms: prompt_ns.map(|ns| ns / 1_000_000),
+            eval_duration_ms: eval_ns.map(|ns| ns / 1_000_000),
+            timing_source: timing_source_text
+                .as_deref()
+                .and_then(TimingSource::from_db),
         })
     })?;
 
@@ -813,6 +960,33 @@ fn cache_hit_rate(cached_input_tokens: i64, input_tokens: i64) -> f64 {
         return 0.0;
     }
     cached_input_tokens.clamp(0, input_tokens) as f64 / input_tokens as f64
+}
+
+/// Time-weighted tokens-per-second. Returns `None` when there are no tokens
+/// or no positive duration so a single zero row can never produce a rate.
+/// Accepts `Option` because per-request rows store nullable durations.
+fn tokens_per_sec(tokens: Option<i64>, duration_ns: Option<i64>) -> Option<f64> {
+    let tokens = tokens.filter(|value| *value > 0)?;
+    let duration_ns = duration_ns.filter(|value| *value > 0)?;
+    Some(tokens as f64 * 1_000_000_000.0 / duration_ns as f64)
+}
+
+/// Shared throughput aggregate columns. The per-model query prefixes every
+/// column with `r.`; `totals_since` uses an empty prefix. Keeping both calls
+/// on this one builder means the native/estimated split cannot drift between
+/// the two queries.
+fn throughput_aggregate_columns(prefix: &str) -> String {
+    let column = |name: &str| format!("{prefix}{name}");
+    let timing_source = column("timing_source");
+    let eval_ns = column("eval_duration_ns");
+    let completion = column("completion_tokens");
+    let prompt_ns = column("prompt_eval_duration_ns");
+    let prompt_tokens = column("prompt_tokens");
+    let cached = column("cached_prompt_tokens");
+
+    format!(
+        r#"COALESCE(SUM(CASE WHEN {timing_source} = 'native' AND {eval_ns} > 0 AND {completion} > 0 THEN {completion} ELSE 0 END), 0) AS native_eval_tokens, COALESCE(SUM(CASE WHEN {timing_source} = 'native' AND {eval_ns} > 0 AND {completion} > 0 THEN {eval_ns} ELSE 0 END), 0) AS native_eval_ns, COALESCE(SUM(CASE WHEN {timing_source} = 'native' AND {prompt_ns} > 0 AND {prompt_tokens} > {cached} THEN {prompt_tokens} - {cached} ELSE 0 END), 0) AS native_prefill_tokens, COALESCE(SUM(CASE WHEN {timing_source} = 'native' AND {prompt_ns} > 0 AND {prompt_tokens} > {cached} THEN {prompt_ns} ELSE 0 END), 0) AS native_prefill_ns, COALESCE(SUM(CASE WHEN {timing_source} = 'native' AND ({eval_ns} > 0 OR {prompt_ns} > 0) THEN 1 ELSE 0 END), 0) AS native_requests, COALESCE(SUM(CASE WHEN {timing_source} = 'estimated' AND {eval_ns} > 0 AND {completion} > 0 THEN {completion} ELSE 0 END), 0) AS estimated_eval_tokens, COALESCE(SUM(CASE WHEN {timing_source} = 'estimated' AND {eval_ns} > 0 AND {completion} > 0 THEN {eval_ns} ELSE 0 END), 0) AS estimated_eval_ns, COALESCE(SUM(CASE WHEN {timing_source} = 'estimated' AND {prompt_ns} > 0 AND {prompt_tokens} > {cached} THEN {prompt_tokens} - {cached} ELSE 0 END), 0) AS estimated_prefill_tokens, COALESCE(SUM(CASE WHEN {timing_source} = 'estimated' AND {prompt_ns} > 0 AND {prompt_tokens} > {cached} THEN {prompt_ns} ELSE 0 END), 0) AS estimated_prefill_ns, COALESCE(SUM(CASE WHEN {timing_source} = 'estimated' AND ({eval_ns} > 0 OR {prompt_ns} > 0) THEN 1 ELSE 0 END), 0) AS estimated_requests"#
+    )
 }
 
 fn compute_streak(daily: &[DailyUsage], today: NaiveDate) -> u32 {
@@ -1029,9 +1203,10 @@ fn day_usage_detail(conn: &Connection, date: NaiveDate) -> rusqlite::Result<DayU
 mod tests {
     use super::{
         balance_history, cache_hit_rate, daily_since, day_usage_detail, local_midnight,
-        models_since, run_migrations, totals_since, Db, BALANCE_RETENTION_SECS,
+        models_since, recent_logs, run_migrations, tokens_per_sec, totals_since, Db,
+        BALANCE_RETENTION_SECS,
     };
-    use crate::models::{BalanceInfoInput, OllamaLogInsert};
+    use crate::models::{BalanceInfoInput, OllamaLogInsert, TimingSource};
     use chrono::{Local, TimeZone};
     use rusqlite::{params, Connection};
 
@@ -1053,6 +1228,9 @@ mod tests {
             cached_prompt_tokens: cached,
             created_at,
             duration_ms: Some(1),
+            prompt_eval_duration_ns: None,
+            eval_duration_ns: None,
+            timing_source: None,
         })
         .expect("insert usage");
     }
@@ -1227,7 +1405,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("user_version");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
 
         let mut stmt = conn
             .prepare("PRAGMA table_info(ollama_logs)")
@@ -1241,6 +1419,431 @@ mod tests {
         assert!(columns
             .iter()
             .any(|column| column == "cached_prompt_tokens"));
+        assert!(columns
+            .iter()
+            .any(|column| column == "prompt_eval_duration_ns"));
+        assert!(columns.iter().any(|column| column == "eval_duration_ns"));
+        assert!(columns.iter().any(|column| column == "timing_source"));
+
+        let mut index_stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?1")
+            .expect("index info");
+        let has_index: bool = index_stmt
+            .query_row(params!["idx_ollama_logs_model_created_at"], |row| {
+                Ok(row.get::<_, String>(0)? == "idx_ollama_logs_model_created_at")
+            })
+            .unwrap_or(false);
+        assert!(has_index, "model/created_at index exists");
+    }
+
+    #[test]
+    fn tokens_per_sec_guard_requires_positive_tokens_and_duration() {
+        assert_eq!(tokens_per_sec(Some(100), Some(1_000_000_000)), Some(100.0));
+        assert_eq!(tokens_per_sec(Some(0), Some(1_000_000_000)), None);
+        assert_eq!(tokens_per_sec(Some(100), Some(0)), None);
+        assert_eq!(tokens_per_sec(Some(-5), Some(1_000_000_000)), None);
+        assert_eq!(tokens_per_sec(Some(100), None), None);
+        assert_eq!(tokens_per_sec(None, Some(1_000_000_000)), None);
+        // 200 tokens over 2 s is 100 tok/s; a naive per-row mean would differ.
+        assert_eq!(tokens_per_sec(Some(200), Some(2_000_000_000)), Some(100.0));
+    }
+
+    struct TimedRow {
+        prompt: i64,
+        completion: i64,
+        cached: i64,
+        prompt_ns: Option<i64>,
+        eval_ns: Option<i64>,
+        source: &'static str,
+    }
+
+    fn insert_timed_usage(
+        conn: &Connection,
+        request_id: &str,
+        model: &str,
+        created_at: i64,
+        row: TimedRow,
+    ) {
+        conn.execute(
+            "INSERT INTO ollama_logs
+                (request_id, model, endpoint, prompt_tokens, completion_tokens,
+                 cached_prompt_tokens, created_at, duration_ms,
+                 prompt_eval_duration_ns, eval_duration_ns, timing_source)
+             VALUES (?1, ?2, '/api/chat', ?3, ?4, ?5, ?6, 1000, ?7, ?8, ?9)",
+            params![
+                request_id,
+                model,
+                row.prompt,
+                row.completion,
+                row.cached,
+                created_at,
+                row.prompt_ns,
+                row.eval_ns,
+                row.source
+            ],
+        )
+        .expect("insert timed usage row");
+    }
+
+    #[test]
+    fn totals_since_aggregates_native_and_estimated_separately() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        run_migrations(&conn).expect("migrations");
+        let base = local_midnight(Local::now().date_naive());
+
+        // Native row: 100 completion tokens in 1 s -> 100 tok/s gen.
+        // Prefill: 1000 prompt, 500 cached -> 500 uncached tokens in 2 s -> 250 tok/s.
+        insert_timed_usage(
+            &conn,
+            "n1",
+            "llama",
+            base + 10,
+            TimedRow {
+                prompt: 1000,
+                completion: 100,
+                cached: 500,
+                prompt_ns: Some(2_000_000_000),
+                eval_ns: Some(1_000_000_000),
+                source: "native",
+            },
+        );
+        // Native row: 200 completion tokens in 2 s (unequal, so a naive mean
+        // of the per-row rates would not equal the time-weighted aggregate).
+        insert_timed_usage(
+            &conn,
+            "n2",
+            "llama",
+            base + 20,
+            TimedRow {
+                prompt: 1000,
+                completion: 200,
+                cached: 0,
+                prompt_ns: Some(4_000_000_000),
+                eval_ns: Some(2_000_000_000),
+                source: "native",
+            },
+        );
+        // Estimated row: 50 completion tokens in 1 s.
+        insert_timed_usage(
+            &conn,
+            "e1",
+            "llama",
+            base + 30,
+            TimedRow {
+                prompt: 1000,
+                completion: 50,
+                cached: 100,
+                prompt_ns: Some(2_000_000_000),
+                eval_ns: Some(1_000_000_000),
+                source: "estimated",
+            },
+        );
+        // Untimed row: counted in requests but excluded from speed.
+        insert_timed_usage(
+            &conn,
+            "u1",
+            "llama",
+            base + 40,
+            TimedRow {
+                prompt: 1000,
+                completion: 100,
+                cached: 0,
+                prompt_ns: None,
+                eval_ns: None,
+                source: "",
+            },
+        );
+
+        let totals = totals_since(&conn, 0).expect("totals");
+        assert_eq!(totals.requests, 4);
+
+        // Native generation: (100 + 200) tokens / (1 s + 2 s) = 100 tok/s.
+        assert!((totals.native_eval_tokens, totals.native_eval_ns) == (300, 3_000_000_000));
+        // Native prefill: (500 + 1000) tokens / (2 s + 4 s) = 250 tok/s.
+        assert!((totals.native_prefill_tokens, totals.native_prefill_ns) == (1_500, 6_000_000_000));
+        assert_eq!(totals.native_requests, 2);
+
+        // Estimated generation: 50 / 1 s = 50 tok/s. Never blended with native.
+        assert!((totals.estimated_eval_tokens, totals.estimated_eval_ns) == (50, 1_000_000_000));
+        // Estimated prefill: 900 / 2 s.
+        assert!(
+            (totals.estimated_prefill_tokens, totals.estimated_prefill_ns) == (900, 2_000_000_000)
+        );
+        assert_eq!(totals.estimated_requests, 1);
+
+        // The mapped Totals speeds use the same time-weighted math.
+        let gen = tokens_per_sec(Some(totals.native_eval_tokens), Some(totals.native_eval_ns));
+        assert_eq!(gen, Some(100.0));
+        let prefill = tokens_per_sec(
+            Some(totals.native_prefill_tokens),
+            Some(totals.native_prefill_ns),
+        );
+        assert_eq!(prefill, Some(250.0));
+    }
+
+    #[test]
+    fn speed_summary_uses_half_open_window_and_keeps_sources_separate() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+        let since = 1_000_000;
+        let until = 2_000_000;
+
+        {
+            let conn = db.lock();
+            // Native: 100 tokens / 1 s.
+            insert_timed_usage(
+                &conn,
+                "n1",
+                "llama",
+                since + 10,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 100,
+                    cached: 500,
+                    prompt_ns: Some(2_000_000_000),
+                    eval_ns: Some(1_000_000_000),
+                    source: "native",
+                },
+            );
+            // Native: 200 tokens / 2 s (unequal, so weighting must hold).
+            insert_timed_usage(
+                &conn,
+                "n2",
+                "llama",
+                since + 20,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 200,
+                    cached: 0,
+                    prompt_ns: Some(4_000_000_000),
+                    eval_ns: Some(2_000_000_000),
+                    source: "native",
+                },
+            );
+            // Estimated: 50 tokens / 1 s, never blended with native.
+            insert_timed_usage(
+                &conn,
+                "e1",
+                "llama",
+                since + 30,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 50,
+                    cached: 100,
+                    prompt_ns: Some(2_000_000_000),
+                    eval_ns: Some(1_000_000_000),
+                    source: "estimated",
+                },
+            );
+            // Untimed: counted in requests but excluded from speed.
+            insert_timed_usage(
+                &conn,
+                "u1",
+                "llama",
+                since + 40,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 100,
+                    cached: 0,
+                    prompt_ns: None,
+                    eval_ns: None,
+                    source: "",
+                },
+            );
+            // At `until` and before `since`: both excluded (half-open window).
+            insert_timed_usage(
+                &conn,
+                "out",
+                "llama",
+                until,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 999,
+                    cached: 0,
+                    prompt_ns: Some(1_000_000_000),
+                    eval_ns: Some(1_000_000_000),
+                    source: "native",
+                },
+            );
+            insert_timed_usage(
+                &conn,
+                "before",
+                "llama",
+                since - 1,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 999,
+                    cached: 0,
+                    prompt_ns: Some(1_000_000_000),
+                    eval_ns: Some(1_000_000_000),
+                    source: "native",
+                },
+            );
+        }
+
+        let summary = db.speed_summary(since, until).expect("speed summary");
+        assert_eq!(summary.since, since);
+        assert_eq!(summary.until, until);
+        // Only the four in-window rows count; the untimed one is included.
+        assert_eq!(summary.requests, 4);
+        // Native gen: (100 + 200) / (1 s + 2 s) = 100 tok/s.
+        assert_eq!(summary.generation_tokens_per_sec, Some(100.0));
+        // Native prefill: (500 + 1000) / (2 s + 4 s) = 250 tok/s.
+        assert_eq!(summary.prefill_tokens_per_sec, Some(250.0));
+        // Estimated stays separate: 50 / 1 s, 900 / 2 s.
+        assert_eq!(summary.estimated_generation_tokens_per_sec, Some(50.0));
+        assert_eq!(summary.estimated_prefill_tokens_per_sec, Some(450.0));
+        assert_eq!(summary.timed_requests, 2);
+        assert_eq!(summary.estimated_requests, 1);
+    }
+
+    #[test]
+    fn model_performance_returns_every_model_with_speed_and_last_seen() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+        let now = Local::now().timestamp();
+        let old = now - (40 * 24 * 60 * 60); // outside the 30-day range
+
+        {
+            let conn = db.lock();
+            // Active native model.
+            insert_timed_usage(
+                &conn,
+                "a1",
+                "llama3.2",
+                now - 3600,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 100,
+                    cached: 0,
+                    prompt_ns: Some(2_000_000_000),
+                    eval_ns: Some(1_000_000_000),
+                    source: "native",
+                },
+            );
+            // Estimated-only model (native speeds null, estimated set).
+            insert_timed_usage(
+                &conn,
+                "b1",
+                "qwen2.5",
+                now - 7200,
+                TimedRow {
+                    prompt: 1000,
+                    completion: 50,
+                    cached: 100,
+                    prompt_ns: Some(2_000_000_000),
+                    eval_ns: Some(1_000_000_000),
+                    source: "estimated",
+                },
+            );
+            // Inactive model: only old usage, no timings.
+            insert_timed_usage(
+                &conn,
+                "c1",
+                "old-model",
+                old,
+                TimedRow {
+                    prompt: 100,
+                    completion: 10,
+                    cached: 0,
+                    prompt_ns: None,
+                    eval_ns: None,
+                    source: "",
+                },
+            );
+        }
+
+        let performance = db.model_performance().expect("performance");
+        assert_eq!(performance.range_days, 30);
+        assert_eq!(performance.models.len(), 3);
+
+        let by_model: std::collections::HashMap<&str, &crate::models::ModelPerformanceEntry> =
+            performance
+                .models
+                .iter()
+                .map(|entry| (entry.model.as_str(), entry))
+                .collect();
+
+        let llama = by_model["llama3.2"];
+        assert_eq!(llama.requests, 1);
+        assert_eq!(llama.output_tokens, 100);
+        assert_eq!(llama.new_input_tokens, 1000);
+        assert_eq!(llama.total_tokens, 1100);
+        assert_eq!(llama.timed_requests, 1);
+        assert_eq!(llama.estimated_requests, 0);
+        assert_eq!(llama.generation_tokens_per_sec, Some(100.0));
+        assert_eq!(llama.prefill_tokens_per_sec, Some(500.0));
+        assert!(llama.estimated_generation_tokens_per_sec.is_none());
+        assert!(llama.last_seen_at > old);
+
+        let qwen = by_model["qwen2.5"];
+        assert_eq!(qwen.requests, 1);
+        assert_eq!(qwen.timed_requests, 0);
+        assert_eq!(qwen.estimated_requests, 1);
+        assert!(qwen.generation_tokens_per_sec.is_none());
+        assert_eq!(qwen.estimated_generation_tokens_per_sec, Some(50.0));
+
+        let old_model = by_model["old-model"];
+        assert_eq!(old_model.requests, 0, "no usage in the range");
+        assert_eq!(old_model.total_tokens, 0);
+        assert!(old_model.generation_tokens_per_sec.is_none());
+        assert!(old_model.estimated_generation_tokens_per_sec.is_none());
+        assert_eq!(old_model.last_seen_at, old, "all-time last seen");
+    }
+
+    #[test]
+    fn recent_logs_expose_per_row_speed_and_timing_source() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        run_migrations(&conn).expect("migrations");
+        let now = Local::now().timestamp();
+
+        insert_timed_usage(
+            &conn,
+            "r1",
+            "llama",
+            now,
+            TimedRow {
+                prompt: 1000,
+                completion: 100,
+                cached: 250,
+                prompt_ns: Some(2_000_000_000),
+                eval_ns: Some(1_000_000_000),
+                source: "native",
+            },
+        );
+        // No timing data.
+        insert_timed_usage(
+            &conn,
+            "r2",
+            "llama",
+            now - 5,
+            TimedRow {
+                prompt: 1000,
+                completion: 100,
+                cached: 0,
+                prompt_ns: None,
+                eval_ns: None,
+                source: "",
+            },
+        );
+
+        let logs = recent_logs(&conn, 10).expect("recent");
+        assert_eq!(logs.len(), 2);
+
+        let timed = &logs[0];
+        assert_eq!(timed.timing_source, Some(TimingSource::Native));
+        assert_eq!(timed.generation_tokens_per_sec, Some(100.0));
+        // Prefill numerator is uncached: 1000 - 250 = 750 / 2 s = 375 tok/s.
+        assert_eq!(timed.prefill_tokens_per_sec, Some(375.0));
+        assert_eq!(timed.prompt_eval_duration_ms, Some(2000));
+        assert_eq!(timed.eval_duration_ms, Some(1000));
+
+        let untimed = &logs[1];
+        assert_eq!(untimed.timing_source, None);
+        assert_eq!(untimed.generation_tokens_per_sec, None);
+        assert_eq!(untimed.prefill_tokens_per_sec, None);
+        assert_eq!(untimed.prompt_eval_duration_ms, None);
+        assert_eq!(untimed.eval_duration_ms, None);
     }
 
     #[test]
