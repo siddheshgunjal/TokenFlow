@@ -12,6 +12,7 @@ finish-args:
   - --device=dri
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.kde.StatusNotifierWatcher
+  - --filesystem=home
 
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
