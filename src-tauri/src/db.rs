@@ -1,12 +1,13 @@
 use std::{
     collections::HashSet,
+    io::Write,
     path::Path,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
-use chrono::{Local, NaiveDate, TimeZone};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use chrono::{Datelike, Local, NaiveDate, TimeZone};
+use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension, Row};
 
 use crate::{
     error::AppError,
@@ -14,7 +15,8 @@ use crate::{
         BalanceInfoInput, BalanceSnapshot, ClearDataResult, DailyUsage, DashboardSummary,
         DayUsageDetail, DeepSeekSyncStatus, HourlyUsage, ModelCatalogEntry, ModelHourlyUsage,
         ModelMutationResult, ModelPerformance, ModelPerformanceEntry, ModelUsage, OllamaLog,
-        OllamaLogInsert, ProxyStatus, SpeedSummary, TimingSource, Totals, SNAPSHOT_RANGE_DAYS,
+        OllamaLogInsert, ProxyStatus, RequestCount, RequestExportResult, RequestFilterOptions,
+        RequestFilters, SpeedSummary, TimingSource, Totals, SNAPSHOT_RANGE_DAYS,
     },
 };
 
@@ -568,6 +570,139 @@ impl Db {
         Ok(summary)
     }
 
+    /// Distinct, alphabetized model and endpoint names for the export
+    /// filter dropdowns. Empty names are excluded so the dropdowns only
+    /// offer values that exist in the table.
+    pub fn request_filter_options(&self) -> Result<RequestFilterOptions, AppError> {
+        let conn = self.lock();
+        let models = query_distinct_names(&conn, "model")?;
+        let endpoints = query_distinct_names(&conn, "endpoint")?;
+        Ok(RequestFilterOptions { models, endpoints })
+    }
+
+    /// Count of `ollama_logs` rows matching the filters, plus the resolved
+    /// half-open `[since, until)` window so the UI can show the range.
+    pub fn count_requests(&self, filters: &RequestFilters) -> Result<RequestCount, AppError> {
+        let resolved = resolve_request_filters(filters)?;
+        let conn = self.lock();
+        let (clause, params) = request_where(&resolved);
+        let sql = format!("SELECT COUNT(*) FROM ollama_logs WHERE {clause}");
+        let count: i64 = conn.query_row(&sql, params_from_iter(params), |row| row.get(0))?;
+        Ok(RequestCount {
+            count,
+            since: resolved.since,
+            until: resolved.until,
+        })
+    }
+
+    /// Writes every matching row to `writer` as RFC-4180 CSV, newest first,
+    /// returning the row count and resolved window. A UTF-8 BOM precedes the
+    /// header so spreadsheets read non-ASCII model names correctly. The
+    /// single DB mutex is held for the whole stream; at expected volumes this
+    /// is sub-second.
+    pub fn write_requests_csv(
+        &self,
+        filters: &RequestFilters,
+        writer: &mut dyn Write,
+    ) -> Result<RequestExportResult, AppError> {
+        let resolved = resolve_request_filters(filters)?;
+        let conn = self.lock();
+        let (clause, params) = request_where(&resolved);
+
+        let sql = format!(
+            "SELECT id, request_id, model, endpoint, prompt_tokens, \
+             completion_tokens, cached_prompt_tokens, created_at, \
+             duration_ms, prompt_eval_duration_ns, eval_duration_ns, timing_source \
+             FROM ollama_logs WHERE {clause} \
+             ORDER BY created_at DESC, id DESC"
+        );
+
+        let mut csv = csv::Writer::from_writer(writer);
+        csv.write_record([
+            "created_at_local",
+            "created_at_unix",
+            "request_id",
+            "model",
+            "endpoint",
+            "input_tokens",
+            "cached_input_tokens",
+            "new_input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cache_hit_rate",
+            "duration_ms",
+            "prompt_eval_duration_ms",
+            "eval_duration_ms",
+            "generation_tokens_per_sec",
+            "prefill_tokens_per_sec",
+            "timing_source",
+        ])?;
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(params), |row| {
+            Ok(RequestCsvRow {
+                created_at: row.get(7)?,
+                request_id: row.get(1)?,
+                model: row.get(2)?,
+                endpoint: row.get(3)?,
+                input_tokens: row.get(4)?,
+                output_tokens: row.get(5)?,
+                cached: row.get::<_, i64>(6)?.clamp(0, row.get::<_, i64>(4)?),
+                duration_ms: row.get(8)?,
+                prompt_ns: row.get(9)?,
+                eval_ns: row.get(10)?,
+                timing_source: row.get(11)?,
+            })
+        })?;
+
+        let mut rows_written: i64 = 0;
+        for row in rows {
+            let row = row?;
+            let new_input = (row.input_tokens - row.cached).max(0);
+            let local = chrono::DateTime::from_timestamp(row.created_at, 0)
+                .map(|dt| dt.with_timezone(&Local).to_rfc3339())
+                .unwrap_or_default();
+
+            csv.write_record([
+                local,
+                row.created_at.to_string(),
+                row.request_id,
+                row.model,
+                row.endpoint,
+                row.input_tokens.to_string(),
+                row.cached.to_string(),
+                new_input.to_string(),
+                row.output_tokens.to_string(),
+                (row.input_tokens + row.output_tokens).to_string(),
+                format!("{:.4}", cache_hit_rate(row.cached, row.input_tokens)),
+                row.duration_ms.map(|v| v.to_string()).unwrap_or_default(),
+                row.prompt_ns
+                    .map(|ns| (ns / 1_000_000).to_string())
+                    .unwrap_or_default(),
+                row.eval_ns
+                    .map(|ns| (ns / 1_000_000).to_string())
+                    .unwrap_or_default(),
+                format_rate(tokens_per_sec(Some(row.output_tokens), row.eval_ns)),
+                format_rate(tokens_per_sec(Some(new_input), row.prompt_ns)),
+                row.timing_source
+                    .as_deref()
+                    .and_then(TimingSource::from_db)
+                    .map(|t| t.as_str().to_string())
+                    .unwrap_or_default(),
+            ])?;
+            rows_written += 1;
+        }
+        csv.flush()?;
+
+        Ok(RequestExportResult {
+            path: String::new(),
+            file_name: String::new(),
+            rows: rows_written,
+            since: resolved.since,
+            until: resolved.until,
+        })
+    }
+
     pub fn delete_model_data(&self, models: &[String]) -> Result<ModelMutationResult, AppError> {
         let models = normalize_model_names(models, "Select at least one model to delete.")?;
 
@@ -1029,6 +1164,163 @@ fn local_midnight(date: NaiveDate) -> i64 {
     }
 }
 
+/// A `RequestFilters` payload resolved to concrete SQL predicates: a half-open
+/// `[since, until)` window (both `None` for All time) and the deduplicated,
+/// trimmed model/endpoint lists (empty = all). Shared by
+/// [`Db::count_requests`] and [`Db::write_requests_csv`] so the two cannot
+/// diverge.
+struct ResolvedRequestFilters {
+    since: Option<i64>,
+    until: Option<i64>,
+    models: Vec<String>,
+    endpoints: Vec<String>,
+}
+
+/// One `ollama_logs` row as read for the CSV export. Raw column values are
+/// carried so the record can be written outside the row-mapping closure, where
+/// `csv::Error` cannot be converted into a `rusqlite` error.
+struct RequestCsvRow {
+    created_at: i64,
+    request_id: String,
+    model: String,
+    endpoint: String,
+    input_tokens: i64,
+    output_tokens: i64,
+    cached: i64,
+    duration_ms: Option<i64>,
+    prompt_ns: Option<i64>,
+    eval_ns: Option<i64>,
+    timing_source: Option<String>,
+}
+
+/// Validates and normalizes `filters` into a [`ResolvedRequestFilters`].
+///
+/// For `Date`/`Week`/`Month` the `YYYY-MM-DD` anchor is required and parsed
+/// with [`NaiveDate::parse_from_str`]; a missing or malformed date is
+/// `AppError::InvalidInput`. `Week` is Sunday-start and `Month` is a calendar
+/// month; both are projected to local midnight so DST edges resolve against
+/// local clock time. `All` yields no bounds.
+fn resolve_request_filters(filters: &RequestFilters) -> Result<ResolvedRequestFilters, AppError> {
+    let (since, until) = match filters.period {
+        crate::models::RequestPeriod::All => (None, None),
+        _ => {
+            let Some(date_text) = filters.date.as_deref() else {
+                return Err(AppError::InvalidInput(
+                    "A date is required for this period.".to_string(),
+                ));
+            };
+            let anchor = NaiveDate::parse_from_str(date_text, "%Y-%m-%d").map_err(|_| {
+                AppError::InvalidInput("Invalid date; expected YYYY-MM-DD".to_string())
+            })?;
+
+            match filters.period {
+                crate::models::RequestPeriod::Date => (
+                    Some(local_midnight(anchor)),
+                    Some(local_midnight(anchor + chrono::Duration::days(1))),
+                ),
+                crate::models::RequestPeriod::Week => {
+                    let start = anchor
+                        - chrono::Duration::days(i64::from(
+                            anchor.weekday().num_days_from_sunday(),
+                        ));
+                    (
+                        Some(local_midnight(start)),
+                        Some(local_midnight(start + chrono::Duration::days(7))),
+                    )
+                }
+                crate::models::RequestPeriod::Month => {
+                    let first = NaiveDate::from_ymd_opt(anchor.year(), anchor.month(), 1)
+                        .expect("the first of any month is valid");
+                    let next = first + chrono::Months::new(1);
+                    (Some(local_midnight(first)), Some(local_midnight(next)))
+                }
+                crate::models::RequestPeriod::All => unreachable!("handled above"),
+            }
+        }
+    };
+
+    Ok(ResolvedRequestFilters {
+        since,
+        until,
+        models: normalize_filter_values(&filters.models),
+        endpoints: normalize_filter_values(&filters.endpoints),
+    })
+}
+
+/// Trims, drops empty, and deduplicates filter values while preserving first
+/// occurrence. An empty result means "all".
+fn normalize_filter_values(values: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(values.len());
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !out.iter().any(|existing| existing == trimmed) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+/// Builds the shared `WHERE` clause and bound parameters for a set of
+/// resolved filters. Time bounds are appended only when `Some`; `IN` lists
+/// only when non-empty. Values are never interpolated into SQL — only the
+/// placeholder count is.
+fn request_where(filters: &ResolvedRequestFilters) -> (String, Vec<Value>) {
+    let mut conditions: Vec<String> = Vec::new();
+    let mut params: Vec<Value> = Vec::new();
+
+    if let Some(since) = filters.since {
+        conditions.push("created_at >= ?".to_string());
+        params.push(Value::from(since));
+    }
+    if let Some(until) = filters.until {
+        conditions.push("created_at < ?".to_string());
+        params.push(Value::from(until));
+    }
+    if !filters.models.is_empty() {
+        let placeholders: Vec<String> = filters.models.iter().map(|_| "?".to_string()).collect();
+        conditions.push(format!("model IN ({})", placeholders.join(", ")));
+        for model in &filters.models {
+            params.push(Value::from(model.clone()));
+        }
+    }
+    if !filters.endpoints.is_empty() {
+        let placeholders: Vec<String> = filters.endpoints.iter().map(|_| "?".to_string()).collect();
+        conditions.push(format!("endpoint IN ({})", placeholders.join(", ")));
+        for endpoint in &filters.endpoints {
+            params.push(Value::from(endpoint.clone()));
+        }
+    }
+
+    let clause = if conditions.is_empty() {
+        "1 = 1".to_string()
+    } else {
+        conditions.join(" AND ")
+    };
+    (clause, params)
+}
+
+/// Distinct, non-empty, alphabetized values for one column.
+fn query_distinct_names(conn: &Connection, column: &str) -> rusqlite::Result<Vec<String>> {
+    let sql = format!(
+        "SELECT DISTINCT {column} FROM ollama_logs WHERE {column} <> '' ORDER BY {column} COLLATE NOCASE"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Formats a tokens-per-second rate with four decimals, or `""` when `None`.
+fn format_rate(rate: Option<f64>) -> String {
+    rate.map(|value| format!("{value:.4}")).unwrap_or_default()
+}
+
 fn normalize_model_names(models: &[String], empty_message: &str) -> Result<Vec<String>, AppError> {
     let mut out: Vec<String> = Vec::with_capacity(models.len());
 
@@ -1203,11 +1495,14 @@ fn day_usage_detail(conn: &Connection, date: NaiveDate) -> rusqlite::Result<DayU
 mod tests {
     use super::{
         balance_history, cache_hit_rate, daily_since, day_usage_detail, local_midnight,
-        models_since, recent_logs, run_migrations, tokens_per_sec, totals_since, Db,
-        BALANCE_RETENTION_SECS,
+        models_since, normalize_filter_values, recent_logs, request_where, resolve_request_filters,
+        run_migrations, tokens_per_sec, totals_since, Db, BALANCE_RETENTION_SECS,
     };
-    use crate::models::{BalanceInfoInput, OllamaLogInsert, TimingSource};
-    use chrono::{Local, TimeZone};
+    use crate::error::AppError;
+    use crate::models::{
+        BalanceInfoInput, OllamaLogInsert, RequestFilters, RequestPeriod, TimingSource,
+    };
+    use chrono::{Datelike, Local, NaiveDate, TimeZone};
     use rusqlite::{params, Connection};
 
     fn insert_usage(
@@ -2098,5 +2393,383 @@ mod tests {
             .expect("history after");
         assert_eq!(after.len(), 1);
         assert_eq!(after[0].total_balance, "10.00");
+    }
+
+    fn filters(
+        period: RequestPeriod,
+        date: Option<&str>,
+        models: &[&str],
+        endpoints: &[&str],
+    ) -> RequestFilters {
+        RequestFilters {
+            period,
+            date: date.map(str::to_string),
+            models: models.iter().map(|s| s.to_string()).collect(),
+            endpoints: endpoints.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn resolve_all_period_has_no_bounds() {
+        let resolved =
+            resolve_request_filters(&filters(RequestPeriod::All, None, &[], &[])).expect("resolve");
+        assert_eq!(resolved.since, None);
+        assert_eq!(resolved.until, None);
+    }
+
+    #[test]
+    fn resolve_date_is_one_local_day() {
+        // 2026-11-27 is a Friday.
+        let resolved =
+            resolve_request_filters(&filters(RequestPeriod::Date, Some("2026-11-27"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(
+            resolved.since,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2026, 11, 27).expect("valid")
+            ))
+        );
+        assert_eq!(
+            resolved.until,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2026, 11, 28).expect("valid")
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_week_is_sunday_start() {
+        // 2026-11-22 is a Sunday; the week is that Sunday through the next Saturday.
+        let sunday = NaiveDate::from_ymd_opt(2026, 11, 22).expect("valid");
+        let sunday_resolved =
+            resolve_request_filters(&filters(RequestPeriod::Week, Some("2026-11-22"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(sunday_resolved.since, Some(local_midnight(sunday)));
+        assert_eq!(
+            sunday_resolved.until,
+            Some(local_midnight(sunday + chrono::Duration::days(7)))
+        );
+
+        // 2026-11-25 is a Wednesday; the week still starts on the preceding Sunday.
+        let wednesday = NaiveDate::from_ymd_opt(2026, 11, 25).expect("valid");
+        assert_eq!(wednesday.weekday(), chrono::Weekday::Wed);
+        let wed_resolved =
+            resolve_request_filters(&filters(RequestPeriod::Week, Some("2026-11-25"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(wed_resolved.since, Some(local_midnight(sunday)));
+
+        // 2026-11-28 is a Saturday; the week starts on the preceding Sunday.
+        let saturday = NaiveDate::from_ymd_opt(2026, 11, 28).expect("valid");
+        assert_eq!(saturday.weekday(), chrono::Weekday::Sat);
+        let sat_resolved =
+            resolve_request_filters(&filters(RequestPeriod::Week, Some("2026-11-28"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(sat_resolved.since, Some(local_midnight(sunday)));
+        assert_eq!(
+            sat_resolved.until,
+            Some(local_midnight(sunday + chrono::Duration::days(7)))
+        );
+    }
+
+    #[test]
+    fn resolve_week_spanning_year_boundary() {
+        // 2026-12-28 is a Monday; its week starts Sunday 2026-12-27 and the
+        // exclusive end is the following Sunday 2027-01-03, crossing the year.
+        let start = NaiveDate::from_ymd_opt(2026, 12, 27).expect("valid");
+        let end = NaiveDate::from_ymd_opt(2027, 1, 3).expect("valid");
+        let resolved =
+            resolve_request_filters(&filters(RequestPeriod::Week, Some("2026-12-28"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(resolved.since, Some(local_midnight(start)));
+        assert_eq!(resolved.until, Some(local_midnight(end)));
+    }
+
+    #[test]
+    fn resolve_month_rolls_over_and_handles_leap_february() {
+        // December -> January.
+        let dec =
+            resolve_request_filters(&filters(RequestPeriod::Month, Some("2026-12-15"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(
+            dec.since,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2026, 12, 1).expect("valid")
+            ))
+        );
+        assert_eq!(
+            dec.until,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2027, 1, 1).expect("valid")
+            ))
+        );
+
+        // Leap February: 2028-02-29 is valid; the month ends 2028-03-01.
+        let feb =
+            resolve_request_filters(&filters(RequestPeriod::Month, Some("2028-02-29"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(
+            feb.since,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2028, 2, 1).expect("valid")
+            ))
+        );
+        assert_eq!(
+            feb.until,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2028, 3, 1).expect("valid")
+            ))
+        );
+
+        // 30-day month: April ends May 1.
+        let apr =
+            resolve_request_filters(&filters(RequestPeriod::Month, Some("2026-04-10"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(
+            apr.until,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2026, 5, 1).expect("valid")
+            ))
+        );
+
+        // 31-day month: March ends April 1.
+        let mar =
+            resolve_request_filters(&filters(RequestPeriod::Month, Some("2026-03-05"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(
+            mar.until,
+            Some(local_midnight(
+                NaiveDate::from_ymd_opt(2026, 4, 1).expect("valid")
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_missing_or_invalid_date() {
+        assert!(matches!(
+            resolve_request_filters(&filters(RequestPeriod::Date, None, &[], &[])),
+            Err(AppError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            resolve_request_filters(&filters(RequestPeriod::Week, Some("27/11/2026"), &[], &[])),
+            Err(AppError::InvalidInput(_))
+        ));
+        // All ignores a supplied date entirely.
+        let resolved =
+            resolve_request_filters(&filters(RequestPeriod::All, Some("not-a-date"), &[], &[]))
+                .expect("resolve");
+        assert_eq!(resolved.since, None);
+    }
+
+    #[test]
+    fn normalize_filter_values_trims_dedupes_and_drops_empty() {
+        assert_eq!(normalize_filter_values(&[]), Vec::<String>::new());
+        assert_eq!(
+            normalize_filter_values(&[
+                " a ".to_string(),
+                "a".to_string(),
+                "".to_string(),
+                "  ".to_string(),
+                "b".to_string()
+            ]),
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn request_where_builds_only_relevant_clauses() {
+        use super::ResolvedRequestFilters;
+
+        // No conditions -> a valid no-op clause so the `WHERE` is well-formed.
+        let (clause, params) = request_where(&ResolvedRequestFilters {
+            since: None,
+            until: None,
+            models: vec![],
+            endpoints: vec![],
+        });
+        assert_eq!(clause, "1 = 1");
+        assert!(params.is_empty());
+
+        // Time + models + endpoints.
+        let (clause, params) = request_where(&ResolvedRequestFilters {
+            since: Some(100),
+            until: Some(200),
+            models: vec!["a".into(), "b".into()],
+            endpoints: vec!["/x".into()],
+        });
+        assert_eq!(
+            clause,
+            "created_at >= ? AND created_at < ? AND model IN (?, ?) AND endpoint IN (?)"
+        );
+        assert_eq!(params.len(), 5);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_usage_at(
+        db: &Db,
+        request_id: &str,
+        model: &str,
+        endpoint: &str,
+        prompt: i64,
+        completion: i64,
+        cached: i64,
+        created_at: i64,
+    ) {
+        db.insert_ollama_log(&OllamaLogInsert {
+            request_id: request_id.to_string(),
+            model: model.to_string(),
+            endpoint: endpoint.to_string(),
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            cached_prompt_tokens: cached,
+            created_at,
+            duration_ms: Some(1),
+            prompt_eval_duration_ns: None,
+            eval_duration_ns: None,
+            timing_source: None,
+        })
+        .expect("insert usage");
+    }
+
+    #[test]
+    fn filter_options_exclude_empty_and_are_alphabetized() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        insert_usage_at(&db, "r1", "Zeta", "", 1, 1, 0, 100);
+        insert_usage_at(&db, "r2", "alpha", "/api/chat", 1, 1, 0, 101);
+        insert_usage_at(&db, "r3", "Beta", "/v1/chat/completions", 1, 1, 0, 102);
+        insert_usage_at(&db, "r4", "alpha", "/api/chat", 1, 1, 0, 103);
+
+        let options = db.request_filter_options().expect("options");
+        assert_eq!(
+            options.models,
+            vec!["alpha".to_string(), "Beta".to_string(), "Zeta".to_string()]
+        );
+        assert_eq!(
+            options.endpoints,
+            vec!["/api/chat".to_string(), "/v1/chat/completions".to_string()]
+        );
+    }
+
+    #[test]
+    fn count_and_csv_respect_combined_filters() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+        let day = local_midnight(NaiveDate::from_ymd_opt(2026, 11, 27).expect("valid"));
+
+        insert_usage_at(&db, "a", "llama", "/api/chat", 10, 5, 0, day + 10);
+        insert_usage_at(
+            &db,
+            "b",
+            "llama",
+            "/v1/chat/completions",
+            20,
+            5,
+            0,
+            day + 20,
+        );
+        insert_usage_at(&db, "c", "qwen", "/api/chat", 30, 5, 0, day + 30);
+        // Outside the date window.
+        insert_usage_at(&db, "d", "llama", "/api/chat", 40, 5, 0, day - 5);
+
+        let day_filter = filters(RequestPeriod::Date, Some("2026-11-27"), &[], &[]);
+        let count = db.count_requests(&day_filter).expect("count");
+        assert_eq!(count.count, 3);
+        assert_eq!(count.since, Some(day));
+
+        // Multiple models + a single endpoint.
+        let combo = filters(
+            RequestPeriod::Date,
+            Some("2026-11-27"),
+            &["llama", "qwen"],
+            &["/api/chat"],
+        );
+        let combo_count = db.count_requests(&combo).expect("count");
+        assert_eq!(combo_count.count, 2);
+
+        // Empty model/endpoint lists behave as All.
+        let all_models = filters(RequestPeriod::Date, Some("2026-11-27"), &[], &[]);
+        assert_eq!(db.count_requests(&all_models).expect("count").count, 3);
+
+        // A range with no rows yields count 0.
+        let empty = filters(RequestPeriod::Date, Some("2020-01-01"), &[], &[]);
+        assert_eq!(db.count_requests(&empty).expect("count").count, 0);
+
+        // All time with no filters matches every row.
+        let all_time = filters(RequestPeriod::All, None, &[], &[]);
+        let all = db.count_requests(&all_time).expect("count");
+        assert_eq!(all.count, 4);
+        assert_eq!(all.since, None);
+        assert_eq!(all.until, None);
+    }
+
+    #[test]
+    fn csv_is_newest_first_with_header_and_escaping() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+        let day = local_midnight(NaiveDate::from_ymd_opt(2026, 11, 27).expect("valid"));
+
+        // A model name with a comma and a quote exercises CSV escaping.
+        insert_usage_at(
+            &db,
+            "older",
+            "model, \"quoted\"",
+            "/api/chat",
+            10,
+            5,
+            0,
+            day + 10,
+        );
+        insert_usage_at(
+            &db,
+            "newer",
+            "model, \"quoted\"",
+            "/api/chat",
+            20,
+            5,
+            0,
+            day + 20,
+        );
+
+        let filter = filters(RequestPeriod::Date, Some("2026-11-27"), &[], &[]);
+        let mut buffer: Vec<u8> = Vec::new();
+        let result = db.write_requests_csv(&filter, &mut buffer).expect("csv");
+        assert_eq!(result.rows, 2);
+        assert_eq!(result.since, Some(day));
+
+        let text = String::from_utf8(buffer).expect("utf-8");
+        let lines: Vec<&str> = text.lines().collect();
+        // Header + 2 rows.
+        assert_eq!(lines.len(), 3);
+        assert!(
+            lines[0].starts_with("created_at_local,created_at_unix,request_id,model,endpoint,"),
+            "header: {}",
+            lines[0]
+        );
+        // Newest-first: "newer" comes before "older".
+        assert!(lines[1].contains("newer"), "row1: {}", lines[1]);
+        assert!(lines[2].contains("older"), "row2: {}", lines[2]);
+        // The escaped model name is present with doubled quotes.
+        assert!(
+            lines[1].contains("\"model, \"\"quoted\"\""),
+            "escaping: {}",
+            lines[1]
+        );
+    }
+
+    #[test]
+    fn csv_with_no_rows_is_header_only() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(&dir.path().join("tokenflow.db")).expect("database");
+
+        let filter = filters(RequestPeriod::Date, Some("2020-01-01"), &[], &[]);
+        let mut buffer: Vec<u8> = Vec::new();
+        let result = db.write_requests_csv(&filter, &mut buffer).expect("csv");
+        assert_eq!(result.rows, 0);
+
+        let text = String::from_utf8(buffer).expect("utf-8");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 1, "header only: {text:?}");
+        assert!(lines[0].starts_with("created_at_local,"));
     }
 }

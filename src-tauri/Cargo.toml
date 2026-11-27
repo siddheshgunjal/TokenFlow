@@ -1,6 +1,6 @@
 [package]
 name = "tokenflow"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first desktop analytics for Ollama and DeepSeek usage"
 authors = ["Siddhesh Gunjal"]
 edition = "2021"
@@ -60,6 +60,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 # Storage + time
 rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
+# RFC-4180 CSV output for the request-history export.
+csv = "1"
 
 # Secret handling. `Zeroizing` wipes the key from memory on drop.
 zeroize = "1"

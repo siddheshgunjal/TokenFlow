@@ -6,6 +6,9 @@ pub enum AppError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("CSV error: {0}")]
+    Csv(#[from] csv::Error),
+
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
