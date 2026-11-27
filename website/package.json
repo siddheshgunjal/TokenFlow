@@ -16,7 +16,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "demo:check": "node scripts/check-demo-parity.mjs",
-    "version:sync": "node scripts/fetch-release-version.mjs"
+    "version:sync": "node scripts/fetch-release-version.mjs",
+    "flatpak:sources": "bash scripts/update-flatpak-sources.sh",
+    "flatpak:release:prepare": "node scripts/prepare-flatpak-release.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.15.0",
