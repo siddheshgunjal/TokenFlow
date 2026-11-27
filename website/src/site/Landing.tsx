@@ -29,37 +29,36 @@ const FEATURES: Array<{
     icon: "activity",
     title: "Token accounting",
     description:
-      "Input, output, context, and cached tokens captured per request — not estimated.",
+      "Input, output, context, and cached tokens captured per request.",
+  },
+  {
+    icon: "zap",
+    title: "Model performance",
+    description:
+      "Compare model usage and speed. Merge or delete recorded labels without changing installed models.",
   },
   {
     icon: "database",
     title: "Cache visibility",
     description:
-      "Token-weighted cache hit rate across models, days, and individual requests.",
+      "Track cache hit rate across models, days, and individual requests.",
   },
   {
     icon: "grid",
     title: "Calendar drill-down",
     description:
-      "A month heatmap for every metric, with a 24-hour chart for any selected day.",
-  },
-  {
-    icon: "terminal",
-    title: "Model breakdown",
-    description:
-      "See which models are doing the work and how your tokens split between them.",
+      "Explore monthly usage heatmaps and 24-hour charts for any selected day.",
   },
   {
     icon: "wallet",
     title: "DeepSeek balance",
-    description:
-      "Track your available balance and chart its trend by day, week, or month.",
+    description: "Track available balance and its day, week, or month trend.",
   },
   {
-    icon: "shield",
-    title: "Private and lightweight",
+    icon: "download",
+    title: "Request history export",
     description:
-      "Loopback-only proxy, local processing, no telemetry. ~60 MB in the background.",
+      "Export matching requests to CSV by period, model, and endpoint.",
   },
 ];
 
@@ -238,7 +237,7 @@ function Hero() {
       <div className="relative mx-auto flex max-w-4xl flex-col items-center px-5 pb-12 pt-12 text-center lg:pb-16 lg:pt-16">
         <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/[0.06] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-accent">
           <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_rgba(0,212,192,0.8)]" />
-          Open source · Private by design
+          Open source · {latestReleaseVersion} · Private by design
         </div>
 
         <h1 className="mt-5 max-w-3xl text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl">
@@ -247,9 +246,8 @@ function Hero() {
         </h1>
 
         <p className="mt-5 max-w-2xl text-lg leading-8 text-muted sm:text-xl">
-          TokenFlow is a private dashboard for Ollama and DeepSeek usage. See
-          input, output, context, cache hits, model spend, and balance without
-          uploading your usage data anywhere.
+          A private dashboard for Local AI and DeepSeek. Track tokens, cache,
+          model speed, balances, and request history
         </p>
 
         <div className="mt-7 flex w-full max-w-xs flex-col items-stretch justify-center gap-3 sm:max-w-none sm:flex-row sm:items-center">
@@ -436,13 +434,11 @@ function DemoSection() {
             Interactive demo
           </p>
           <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Try clicking around, It's real!
+            Explore the live dashboard
           </h2>
-          {/*<p className="mt-3 text-base leading-8 text-muted sm:text-lg">
-            This is the real TokenFlow UI, running entirely in your browser with
-            sample data. Click through months, inspect a day, filter models,
-            hover the charts, or hit refresh.
-          </p>*/}
+          <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
+            This is the real TokenFlow UI. Go on, Try it out!
+          </p>
         </div>
 
         <div className="mt-8">
@@ -483,7 +479,8 @@ function FeatureSection() {
           </h2>
           <p className="mt-3 text-base leading-8 text-muted sm:text-lg">
             TokenFlow turns raw request logs into the numbers that matter:
-            tokens, context, cache efficiency, model mix, and balance.
+            tokens, context, cache efficiency, model mix, throughput, balance,
+            and export-ready history.
           </p>
         </div>
 
@@ -637,7 +634,7 @@ function HowItWorks() {
     {
       title: "Watch the dashboard fill in",
       description:
-        "Totals, model breakdowns, cache rates, and day-level charts update as your requests complete",
+        "Totals, model breakdowns, cache rates, throughput, and day-level charts update as your requests complete",
     },
   ];
 
