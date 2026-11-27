@@ -165,12 +165,14 @@ function DemoPlaceholder({ onLaunch }: { onLaunch: () => void }) {
         <Icon name="activity" className="h-4 w-4" />
         Launch interactive demo
       </button>
-      <div className="relative grid w-full max-w-xl grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="relative grid w-full max-w-xl grid-cols-2 gap-2 sm:grid-cols-3">
         {[
           "Token accounting",
           "Cache visibility",
-          "Model breakdown",
+          "Per-model speed",
+          "Calendar drill-down",
           "DeepSeek balance",
+          "CSV export",
         ].map((label) => (
           <span
             key={label}

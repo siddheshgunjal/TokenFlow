@@ -1,14 +1,14 @@
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State};
 use zeroize::Zeroize;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, Local, NaiveDate};
 
 use crate::{
     error::AppError,
     models::{
         BalanceSnapshot, ClearDataResult, DashboardSummary, DayUsageDetail, DeepSeekStatus,
         ModelCatalogEntry, ModelMutationResult, ModelPerformance, ProxyStatus, RefreshResult,
-        SpeedSummary,
+        RequestCount, RequestExportResult, RequestFilterOptions, RequestFilters, SpeedSummary,
     },
     secrets::{self, KeyringStore, SecretStore},
     settings::{Settings, SettingsView},
@@ -367,6 +367,170 @@ pub async fn merge_models(
 #[tauri::command]
 pub fn get_proxy_status(state: State<'_, AppState>) -> ProxyStatus {
     state.proxy_status()
+}
+
+/// Distinct models and endpoints for the export filter dropdowns.
+#[tauri::command]
+pub async fn get_request_filter_options(
+    state: State<'_, AppState>,
+) -> Result<RequestFilterOptions, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.request_filter_options())
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+/// Live match count for the export dialog, with the resolved window.
+#[tauri::command]
+pub async fn count_requests(
+    state: State<'_, AppState>,
+    filters: RequestFilters,
+) -> Result<RequestCount, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.count_requests(&filters))
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())
+}
+
+/// Writes the filtered request history to a CSV file in the user's Downloads
+/// directory and returns its absolute path and name. No file-dialog plugin is
+/// involved: the file is generated and saved in Rust.
+#[tauri::command]
+pub async fn export_requests(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    filters: RequestFilters,
+) -> Result<RequestExportResult, String> {
+    let state = state.inner().clone();
+    let directory = resolve_export_dir(&app);
+
+    tokio::task::spawn_blocking(move || -> Result<RequestExportResult, AppError> {
+        use std::io::Write;
+        let directory = directory
+            .ok_or_else(|| AppError::Config("Could not determine a download directory".into()))?;
+        std::fs::create_dir_all(&directory)?;
+
+        let file_name = export_file_name(&filters);
+        let path = unique_export_path(&directory, &file_name);
+
+        let file = std::fs::File::create(&path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        // UTF-8 BOM so spreadsheets read non-ASCII model names correctly.
+        writer.write_all(b"\xEF\xBB\xBF")?;
+
+        let result = state.db.write_requests_csv(&filters, &mut writer)?;
+        writer.flush()?;
+
+        Ok(RequestExportResult {
+            path: path.to_string_lossy().into_owned(),
+            file_name,
+            rows: result.rows,
+            since: result.since,
+            until: result.until,
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
+}
+
+/// Downloads, then document, then home — the first that exists.
+/// Exports are always written into a `TokenFlow` subfolder under the resolved
+/// base so files accumulate in one place instead of cluttering Downloads.
+fn resolve_export_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let base = app
+        .path()
+        .download_dir()
+        .ok()
+        .or_else(|| app.path().document_dir().ok())
+        .or_else(|| app.path().home_dir().ok())?;
+    Some(base.join("TokenFlow"))
+}
+
+/// `tokenflow-requests_<period>_<models>_<endpoints>_<yyyymmdd-hhmmss>.csv`.
+fn export_file_name(filters: &RequestFilters) -> String {
+    let period = match filters.period {
+        crate::models::RequestPeriod::All => "all-time".to_string(),
+        crate::models::RequestPeriod::Date => filters
+            .date
+            .as_deref()
+            .map(sanitize_file_token)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "date".to_string()),
+        crate::models::RequestPeriod::Week => {
+            match filters
+                .date
+                .as_deref()
+                .and_then(|text| chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").ok())
+            {
+                Some(anchor) => {
+                    let start = anchor
+                        - chrono::Duration::days(i64::from(
+                            anchor.weekday().num_days_from_sunday(),
+                        ));
+                    format!("week-of-{}", start.format("%Y-%m-%d"))
+                }
+                None => "week".to_string(),
+            }
+        }
+        crate::models::RequestPeriod::Month => {
+            match filters
+                .date
+                .as_deref()
+                .and_then(|text| chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").ok())
+            {
+                Some(anchor) => format!("{}", anchor.format("%Y-%m")),
+                None => "month".to_string(),
+            }
+        }
+    };
+
+    let models = if filters.models.is_empty() {
+        "all-models"
+    } else {
+        &format!("models-{}", filters.models.len())
+    };
+    let endpoints = if filters.endpoints.is_empty() {
+        "all-endpoints"
+    } else {
+        &format!("endpoints-{}", filters.endpoints.len())
+    };
+
+    let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+    format!("tokenflow-requests_{period}_{models}_{endpoints}_{timestamp}.csv")
+}
+
+/// Replaces path-illegal characters (and control bytes) with `-`.
+fn sanitize_file_token(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '?' | '*' | '\n' | '\r' => '-',
+            _ => c,
+        })
+        .collect()
+}
+
+/// Returns a non-colliding path, appending `-2`, `-3`, … as needed.
+fn unique_export_path(directory: &std::path::Path, file_name: &str) -> std::path::PathBuf {
+    let ext = std::path::Path::new(file_name)
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "csv".to_string());
+    let stem = std::path::Path::new(file_name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file_name.to_string());
+
+    let mut candidate = directory.join(file_name);
+    let mut counter = 2u32;
+    while candidate.exists() {
+        candidate = directory.join(format!("{stem}-{counter}.{ext}"));
+        counter += 1;
+    }
+    candidate
 }
 
 #[tauri::command]

@@ -351,11 +351,70 @@ pub struct RefreshResult {
     pub deepseek_error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClearDataResult {
     pub ollama_logs: usize,
     pub deepseek_balances: usize,
+}
+
+/// The period a request-history export covers. `Date`, `Week`, and `Month`
+/// each require a `YYYY-MM-DD` local anchor; `Week` is Sunday-start and
+/// `Month` is a calendar month. `All` is unbounded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestPeriod {
+    All,
+    Date,
+    Week,
+    Month,
+}
+
+/// Request-history export filters as sent from the UI. `models` and
+/// `endpoints` are empty for "all"; an all-selected list is normalized to
+/// empty by the caller before invoking the backend.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestFilters {
+    pub period: RequestPeriod,
+    /// `YYYY-MM-DD` local anchor. Required for Date/Week/Month; ignored for All.
+    pub date: Option<String>,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub endpoints: Vec<String>,
+}
+
+/// Distinct models and endpoints available as export filter options.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestFilterOptions {
+    pub models: Vec<String>,
+    pub endpoints: Vec<String>,
+}
+
+/// Live match count for the export dialog, with the resolved half-open window.
+/// `since` and `until` are `None` for All time so the bounds serialize safely
+/// to JavaScript (avoiding `i64::MAX`, which exceeds `Number.MAX_SAFE_INTEGER`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestCount {
+    pub count: i64,
+    /// None for All time.
+    pub since: Option<i64>,
+    /// None for All time.
+    pub until: Option<i64>,
+}
+
+/// Result of writing a request-history CSV export.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestExportResult {
+    pub path: String,
+    pub file_name: String,
+    pub rows: i64,
+    pub since: Option<i64>,
+    pub until: Option<i64>,
 }
 
 /// Deserialized DeepSeek balance API response.

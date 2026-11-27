@@ -12,6 +12,7 @@ finish-args:
   - --device=dri
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.kde.StatusNotifierWatcher
+  - --filesystem=home
 
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
@@ -35,7 +36,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/siddheshgunjal/TokenFlow.git
-        tag: v0.2.0
+        tag: v0.2.1
       - flatpak-cargo-sources.json
       - node-sources.json
     build-commands:

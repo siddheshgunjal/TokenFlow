@@ -2,66 +2,66 @@
 import type { ReleaseDownloads } from "./downloads";
 
 export const latestReleaseDownloads: ReleaseDownloads = {
-  "tag": "v0.1.0",
-  "releaseUrl": "https://github.com/siddheshgunjal/TokenFlow/releases/tag/v0.1.0",
-  "publishedAt": "2026-11-13T04:49:27Z",
+  "tag": "v0.2.0",
+  "releaseUrl": "https://github.com/siddheshgunjal/TokenFlow/releases/tag/v0.2.0",
+  "publishedAt": "2026-11-22T07:37:25Z",
   "prerelease": false,
   "linux": {
     "x86_64": {
       "appimage": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.AppImage",
-        "size": 88877560
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-x86_64.AppImage",
+        "size": 88914424
       },
       "deb": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.deb",
-        "size": 11219840
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-x86_64.deb",
+        "size": 11280392
       },
       "flatpak": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.flatpak",
-        "size": 6799904
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-x86_64.flatpak",
+        "size": 6827232
       },
       "rpm": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-x86_64.rpm",
-        "size": 11197384
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-x86_64.rpm",
+        "size": 11257429
       }
     },
     "aarch64": {
       "appimage": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.AppImage",
-        "size": 87153160
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-aarch64.AppImage",
+        "size": 87185928
       },
       "deb": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.deb",
-        "size": 11468122
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-aarch64.deb",
+        "size": 11514508
       },
       "flatpak": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.flatpak",
-        "size": 6046712
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-aarch64.flatpak",
+        "size": 6088888
       },
       "rpm": {
-        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-linux-aarch64.rpm",
-        "size": 11442180
+        "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-linux-aarch64.rpm",
+        "size": 11495215
       }
     }
   },
   "macos": {
     "aarch64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-macos-aarch64.dmg",
-      "size": 8441416
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-macos-aarch64.dmg",
+      "size": 8486697
     },
     "x86_64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-macos-x86_64.dmg",
-      "size": 8862328
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-macos-x86_64.dmg",
+      "size": 8882578
     }
   },
   "windows": {
     "aarch64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-windows-aarch64-setup.exe",
-      "size": 4859705
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-windows-aarch64-setup.exe",
+      "size": 4870800
     },
     "x86_64": {
-      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.1.0/TokenFlow-0.1.0-windows-x86_64-setup.exe",
-      "size": 5498064
+      "url": "https://github.com/siddheshgunjal/TokenFlow/releases/download/v0.2.0/TokenFlow-0.2.0-windows-x86_64-setup.exe",
+      "size": 5528314
     }
   }
 };

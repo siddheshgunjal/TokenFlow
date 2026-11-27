@@ -13,6 +13,9 @@ import {
   mockSpeedSummary,
   mockDeleteModelData,
   mockMergeModels,
+  mockRequestFilterOptions,
+  mockCountRequests,
+  mockExportRequests,
 } from "./mock";
 import type {
   BalanceSnapshot,
@@ -24,6 +27,10 @@ import type {
   ModelMutationResult,
   ModelPerformance,
   RefreshResult,
+  RequestCount,
+  RequestExportResult,
+  RequestFilterOptions,
+  RequestFilters,
   Settings,
   SettingsView,
   SpeedSummary,
@@ -235,6 +242,57 @@ export async function mergeModels(
     sources,
     targetModel,
   });
+}
+
+/** Distinct models and endpoints for the export filter dropdowns. */
+export async function getRequestFilterOptions(): Promise<RequestFilterOptions> {
+  if (!isTauri) {
+    await delay(80);
+    return mockRequestFilterOptions();
+  }
+  return invoke<RequestFilterOptions>("get_request_filter_options");
+}
+
+/** Live match count for the export dialog, with the resolved window. */
+export async function countRequests(
+  filters: RequestFilters,
+): Promise<RequestCount> {
+  if (!isTauri) {
+    await delay(120);
+    return mockCountRequests(filters);
+  }
+  return invoke<RequestCount>("count_requests", { filters });
+}
+
+/**
+ * Exports the filtered request history to CSV. Under Tauri the file is
+ * generated and saved in Rust under a `TokenFlow` subfolder of the Downloads
+ * directory; in the browser the CSV is built in memory and downloaded via a Blob, returning a synthetic
+ * result so the success UI renders identically.
+ */
+export async function exportRequests(
+  filters: RequestFilters,
+): Promise<RequestExportResult> {
+  if (!isTauri) {
+    await delay(250);
+    const { csv, result } = mockExportRequests(filters);
+    triggerBlobDownload(csv, result.fileName);
+    return result;
+  }
+  return invoke<RequestExportResult>("export_requests", { filters });
+}
+
+function triggerBlobDownload(csv: string, fileName: string): void {
+  // A UTF-8 BOM so spreadsheet apps read non-ASCII model names correctly.
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function showMainWindow(): Promise<void> {
