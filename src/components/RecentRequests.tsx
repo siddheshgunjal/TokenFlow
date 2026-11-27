@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 
 import {
   formatCompact,
@@ -11,6 +11,8 @@ import {
 } from "../lib/format";
 import { APPROX_TOOLTIP } from "../lib/throughput";
 import type { OllamaLog } from "../lib/types";
+import { Icon } from "./Icons";
+import { ExportRequestsDialog } from "./ExportRequestsDialog";
 
 // Memoized on the `logs` reference: unchanged usage slices keep their
 // previous identity, so this table only re-renders when a request changes.
@@ -19,6 +21,7 @@ export const RecentRequests = memo(function RecentRequests({
 }: {
   logs: OllamaLog[];
 }) {
+  const [exportOpen, setExportOpen] = useState(false);
   const visibleLogs = logs.slice(0, 15);
 
   return (
@@ -32,8 +35,25 @@ export const RecentRequests = memo(function RecentRequests({
             Per-request input, output, cache, and speed metrics from the proxy
           </p>
         </div>
-        <span className="chip shrink-0">{visibleLogs.length} shown</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="chip">{visibleLogs.length} shown</span>
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-muted transition-colors hover:bg-white/[0.06] hover:text-ink"
+          >
+            <Icon name="download" className="h-3.5 w-3.5" />
+            Export
+          </button>
+        </div>
       </div>
+
+      {exportOpen ? (
+        <ExportRequestsDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
 
       {visibleLogs.length === 0 ? (
         <div className="border-t border-white/[0.05] px-5 py-10 text-center flex min-h-0 flex-1 flex-col justify-center">

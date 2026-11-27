@@ -44,6 +44,7 @@ TokenFlow is a local-first desktop companion for Ollama and DeepSeek users. It r
 - Your Deepseek account balance tracking
 - Deepseek balance interactive trend chart (Day/Week/Month anchored to the selected day)
 - Per-model and overall generation/prefill speed in tok/s, with exact native Ollama timings and stream-derived `/v1` estimates
+- Export your full request history to CSV, filtered by period (all time / date / week / month) and by model and endpoint, saved to a **TokenFlow** folder in your Downloads folder
 
 🔒 **Private & Local**
 - Everything runs on your machine - no data leaves your desktop

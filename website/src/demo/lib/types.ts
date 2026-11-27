@@ -276,6 +276,48 @@ export interface ClearDataResult {
   deepseekBalances: number;
 }
 
+/** Period a request-history export covers. */
+export type RequestPeriod = "all" | "date" | "week" | "month";
+
+/**
+ * Request-history export filters. `models` and `endpoints` are empty for
+ * "all"; a fully-selected list is normalized to empty before invoking the
+ * backend so "all selected" and "All" behave identically.
+ */
+export interface RequestFilters {
+  period: RequestPeriod;
+  /** YYYY-MM-DD local anchor; null for All time. */
+  date: string | null;
+  /** Empty = all models. */
+  models: string[];
+  /** Empty = all endpoints. */
+  endpoints: string[];
+}
+
+/** Distinct models and endpoints available as export filter options. */
+export interface RequestFilterOptions {
+  models: string[];
+  endpoints: string[];
+}
+
+/** Live match count for the export dialog, with the resolved window. */
+export interface RequestCount {
+  count: number;
+  /** null for All time. */
+  since: number | null;
+  /** null for All time. */
+  until: number | null;
+}
+
+/** Result of writing a request-history CSV export. */
+export interface RequestExportResult {
+  path: string;
+  fileName: string;
+  rows: number;
+  since: number | null;
+  until: number | null;
+}
+
 export interface OllamaUsageEvent {
   type: string;
   model: string;

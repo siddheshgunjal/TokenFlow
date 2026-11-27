@@ -7,6 +7,9 @@ import {
   mockModelCatalog,
   mockModelPerformance,
   mockSpeedSummary,
+  mockRequestFilterOptions,
+  mockCountRequests,
+  mockExportRequests,
 } from "./mock";
 import type {
   BalanceSnapshot,
@@ -16,6 +19,10 @@ import type {
   ModelMutationResult,
   ModelPerformance,
   RefreshResult,
+  RequestCount,
+  RequestExportResult,
+  RequestFilterOptions,
+  RequestFilters,
   SpeedSummary,
 } from "./types";
 
@@ -86,4 +93,63 @@ export async function mergeModels(
 ): Promise<ModelMutationResult> {
   await wait(180);
   return mockMergeModels(sources, targetModel);
+}
+
+/** Distinct models and endpoints for the export filter dropdowns. */
+export async function getRequestFilterOptions(): Promise<RequestFilterOptions> {
+  await wait(80);
+  return mockRequestFilterOptions();
+}
+
+/** Live match count for the export dialog, with the resolved window. */
+export async function countRequests(
+  filters: RequestFilters,
+): Promise<RequestCount> {
+  await wait(120);
+  return mockCountRequests(filters);
+}
+
+/**
+ * Exports the filtered request history to CSV. The demo has no backend, so
+ * the CSV is built in memory and downloaded via a Blob, returning a synthetic
+ * result so the success UI renders identically.
+ */
+export async function exportRequests(
+  filters: RequestFilters,
+): Promise<RequestExportResult> {
+  await wait(250);
+  const { csv, result } = mockExportRequests(filters);
+  triggerBlobDownload(csv, result.fileName);
+  return result;
+}
+
+function triggerBlobDownload(csv: string, fileName: string): void {
+  // A UTF-8 BOM so spreadsheet apps read non-ASCII model names correctly.
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function copyText(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    return copied;
+  }
 }

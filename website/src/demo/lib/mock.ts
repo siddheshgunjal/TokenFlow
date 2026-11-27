@@ -11,11 +11,15 @@ import type {
   ModelPerformanceEntry,
   ModelUsage,
   OllamaLog,
+  RequestCount,
+  RequestExportResult,
+  RequestFilterOptions,
+  RequestFilters,
   Settings,
   SettingsView,
   SpeedSummary,
 } from "./types";
-import { toDateKey, todayKey } from "./format";
+import { parseDateKey, toDateKey, todayKey } from "./format";
 
 const MODEL_NAMES = [
   "llama3.2:latest",
@@ -776,3 +780,184 @@ export const mockDeepSeekStatus: DeepSeekStatus = {
   ],
   pollIntervalSecs: 900,
 };
+
+// ---------------------------------------------------------------------------
+// Request-history export mocks (browser preview only). The real data always
+// comes from the Rust backend; these stand in so the dialog works in a plain
+// browser and on the website demo.
+// ---------------------------------------------------------------------------
+
+const MOCK_ENDPOINTS = ["/api/chat", "/api/generate", "/v1/chat/completions"];
+
+/** Distinct model names plus the common endpoints, for the filter dropdowns. */
+export function mockRequestFilterOptions(): RequestFilterOptions {
+  return {
+    models: activeMockModels().map((model) => model.name),
+    endpoints: MOCK_ENDPOINTS.slice(),
+  };
+}
+
+/**
+ * Resolves a `YYYY-MM-DD` anchor to a half-open `[since, until)` window in
+ * local epoch seconds, mirroring the Rust backend. Weeks start on Sunday.
+ */
+function mockWindow(
+  period: RequestFilters["period"],
+  anchor: string | null,
+): [number, number] {
+  if (period === "all" || !anchor)
+    return [0, Math.floor(Date.now() / 1000) + 86_400];
+
+  const date = parseDateKey(anchor);
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000;
+
+  if (period === "date") {
+    const start = startOfDay(date);
+    return [start, start + 86_400];
+  }
+  if (period === "week") {
+    const daysFromSunday = date.getDay();
+    const start = startOfDay(date) - daysFromSunday * 86_400;
+    return [start, start + 7 * 86_400];
+  }
+  // month
+  const first =
+    new Date(date.getFullYear(), date.getMonth(), 1).getTime() / 1000;
+  const nextMonth =
+    new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime() / 1000;
+  return [first, nextMonth];
+}
+
+function mockLogMatches(
+  log: OllamaLog,
+  filters: RequestFilters,
+  since: number,
+  until: number,
+): boolean {
+  if (log.createdAt < since || log.createdAt >= until) return false;
+  if (filters.models.length > 0 && !filters.models.includes(log.model))
+    return false;
+  if (filters.endpoints.length > 0 && !filters.endpoints.includes(log.endpoint))
+    return false;
+  return true;
+}
+
+/** Filters `mockCoreSnapshot().recent` by period, model, and endpoint. */
+export function mockCountRequests(filters: RequestFilters): RequestCount {
+  const [since, until] = mockWindow(filters.period, filters.date);
+  const rows = mockCoreSnapshot().recent.filter((log) =>
+    mockLogMatches(log, filters, since, until),
+  );
+  return { count: rows.length, since, until };
+}
+
+/**
+ * Builds the same CSV string the Rust backend writes (minus the BOM), used
+ * for the browser Blob download. Columns match the backend exactly.
+ */
+export function buildRequestCsv(logs: OllamaLog[]): string {
+  const header = [
+    "created_at_local",
+    "created_at_unix",
+    "request_id",
+    "model",
+    "endpoint",
+    "input_tokens",
+    "cached_input_tokens",
+    "new_input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "cache_hit_rate",
+    "duration_ms",
+    "prompt_eval_duration_ms",
+    "eval_duration_ms",
+    "generation_tokens_per_sec",
+    "prefill_tokens_per_sec",
+    "timing_source",
+  ].join(",");
+
+  const lines = logs.map((log) => {
+    const local = new Date(log.createdAt * 1000).toISOString().replace("Z", "");
+    const newInput = Math.max(0, log.inputTokens - log.cachedInputTokens);
+    const cells = [
+      local,
+      String(log.createdAt),
+      log.model,
+      log.endpoint,
+      String(log.inputTokens),
+      String(log.cachedInputTokens),
+      String(newInput),
+      String(log.outputTokens),
+      String(log.totalTokens),
+      log.cacheHitRate.toFixed(4),
+      log.durationMs == null ? "" : String(log.durationMs),
+      log.promptEvalDurationMs == null ? "" : String(log.promptEvalDurationMs),
+      log.evalDurationMs == null ? "" : String(log.evalDurationMs),
+      log.generationTokensPerSec == null
+        ? ""
+        : log.generationTokensPerSec.toFixed(4),
+      log.prefillTokensPerSec == null ? "" : log.prefillTokensPerSec.toFixed(4),
+      log.timingSource ?? "",
+    ];
+    return cells.map((cell) => csvEscape(cell)).join(",");
+  });
+
+  return [header, ...lines].join("\n");
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/**
+ * Returns the CSV rows and a synthetic export result for the browser. The
+ * Blob download is triggered by the caller.
+ */
+export function mockExportRequests(filters: RequestFilters): {
+  csv: string;
+  result: RequestExportResult;
+} {
+  const [since, until] = mockWindow(filters.period, filters.date);
+  const rows = mockCoreSnapshot().recent.filter((log) =>
+    mockLogMatches(log, filters, since, until),
+  );
+  const csv = buildRequestCsv(rows);
+  const fileName = mockExportFileName(filters);
+  return {
+    csv,
+    result: {
+      path: "(browser preview)",
+      fileName,
+      rows: rows.length,
+      since,
+      until,
+    },
+  };
+}
+
+function mockExportFileName(filters: RequestFilters): string {
+  const period =
+    filters.period === "all"
+      ? "all-time"
+      : filters.period === "week"
+        ? `week-of-${filters.date ?? "week"}`
+        : filters.period === "month"
+          ? (filters.date ?? "month").slice(0, 7)
+          : (filters.date ?? "date");
+  const models =
+    filters.models.length === 0
+      ? "all-models"
+      : `models-${filters.models.length}`;
+  const endpoints =
+    filters.endpoints.length === 0
+      ? "all-endpoints"
+      : `endpoints-${filters.endpoints.length}`;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `tokenflow-requests_${period}_${models}_${endpoints}_${stamp}.csv`;
+}
